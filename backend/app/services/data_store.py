@@ -1,0 +1,97 @@
+"""Reads Stage 2's per-kit feature CSVs (data/processed/TestBrakefinal_data_raw_*.csv)
+directly. One kit's CSV is a few hundred KB to low MB -- there's no need for
+a SQLite/Parquet cache at this scale; if more kits are added later and this
+gets slow, that's the point to add one, not before.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pandas as pd
+
+from ..config import get_paths
+
+_CSV_PATTERN = re.compile(r"TestBrakefinal_data_raw_(Dati\d+)\.csv$")
+
+# Columns shown in the event list view (not the full 111-column detail row).
+EVENT_LIST_COLUMNS = [
+    "event_id", "PhaseIdx", "MBP_ID", "BC_ID", "WV_ID",
+    "Start_brake_time_pipe", "End_brake_time_pipe",
+    "Total_power_efficiency", "Max_pressure_pipe", "Max_pressure_cyl",
+    "Non_Standard_Braking", "EmergencyBrake_action",
+    "MBP_Sensor_error", "BC_SensorError", "WV_SensorError",
+]
+
+
+def _kit_csv_path(kit_id: str) -> Path:
+    return get_paths().processed / f"TestBrakefinal_data_raw_{kit_id}.csv"
+
+
+def available_kit_ids() -> list[str]:
+    processed = get_paths().processed
+    if not processed.is_dir():
+        return []
+    ids = []
+    for p in processed.glob("TestBrakefinal_data_raw_*.csv"):
+        m = _CSV_PATTERN.search(p.name)
+        if m:
+            ids.append(m.group(1))
+    return sorted(ids)
+
+
+def load_kit_table(kit_id: str) -> pd.DataFrame:
+    """Loads one kit's CSV fresh (no in-memory caching -- a re-run pipeline
+    job overwrites this file, and staleness here would be a worse bug than
+    the cost of re-reading a small CSV per request)."""
+    path = _kit_csv_path(kit_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"No processed data for kit '{kit_id}' at {path}")
+    df = pd.read_csv(path, dtype={"MBP_ID": str, "BC_ID": str, "WV_ID": str})
+    df.insert(0, "event_id", df.index)
+    return df
+
+
+def kit_summary(kit_id: str) -> dict:
+    df = load_kit_table(kit_id)
+    non_standard = df["Non_Standard_Braking"].fillna(0).astype(int)
+    return {
+        "kit_id": kit_id,
+        "event_count": int(len(df)),
+        "date_range": [
+            df["Start_brake_time_pipe"].min() if len(df) else None,
+            df["Start_brake_time_pipe"].max() if len(df) else None,
+        ],
+        "non_standard_count": int(non_standard.sum()),
+        "sensor_error_count": int(
+            df[["MBP_Sensor_error", "BC_SensorError", "WV_SensorError"]]
+            .fillna(0).astype(int).any(axis=1).sum()
+        ),
+    }
+
+
+def list_events(kit_id: str, offset: int = 0, limit: int = 50,
+                 predictions: "pd.Series | None" = None) -> dict:
+    df = load_kit_table(kit_id)
+    if predictions is not None:
+        df = df.assign(predicted_leakage=predictions)
+    df = df.sort_values("Start_brake_time_pipe", na_position="last")
+    total = len(df)
+    columns = EVENT_LIST_COLUMNS + (["predicted_leakage"] if predictions is not None else [])
+    page = df.iloc[offset: offset + limit][columns]
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "events": page.to_dict(orient="records"),
+    }
+
+
+def get_event(kit_id: str, event_id: int, predictions: "pd.Series | None" = None) -> dict:
+    df = load_kit_table(kit_id)
+    if predictions is not None:
+        df = df.assign(predicted_leakage=predictions)
+    row = df.loc[df["event_id"] == event_id]
+    if row.empty:
+        raise KeyError(f"No event {event_id} for kit {kit_id}")
+    return row.iloc[0].to_dict()

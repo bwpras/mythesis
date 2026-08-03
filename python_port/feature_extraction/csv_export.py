@@ -60,6 +60,19 @@ def _coerce_datetimes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _coerce_flag_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Re-applies postprocessing.normalize_flag_dtypes() to data just read
+    back from disk. Belt-and-suspenders: `build_feature_table()` already
+    normalizes these columns before a fresh table is ever written, but this
+    also self-heals any pre-existing CSV written before that fix existed,
+    since every merge here reads the old file back in before rewriting it."""
+    if __package__:
+        from .postprocessing import normalize_flag_dtypes
+    else:
+        from python_port.feature_extraction.postprocessing import normalize_flag_dtypes
+    return normalize_flag_dtypes(df)
+
+
 def _composite_key(df: pd.DataFrame) -> pd.Series:
     """Port of update_brake_master.m's buildCompositeKey(): join key
     columns with '|', formatting datetimes to a fixed-precision string and
@@ -100,6 +113,7 @@ def export_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: boo
     if out_path.is_file():
         existing = pd.read_csv(out_path, dtype={"MBP_ID": str, "BC_ID": str, "WV_ID": str})
         existing = _coerce_datetimes(existing)
+        existing = _coerce_flag_dtypes(existing)
 
         new_key = _composite_key(new_table)
         existing_key = _composite_key(existing)
@@ -110,6 +124,8 @@ def export_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: boo
         combined = pd.concat([existing, new_table], ignore_index=True)
     else:
         combined = new_table
+
+    combined = _coerce_flag_dtypes(combined)
 
     # Safety net: enforce uniqueness by key (stable, keep first) -- matches
     # update_brake_master.m's own defensive re-dedup after merging.

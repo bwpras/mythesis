@@ -44,6 +44,14 @@ from imblearn.over_sampling import SMOTE, BorderlineSMOTE, ADASYN, KMeansSMOTE
 from imblearn.combine import SMOTETomek, SMOTEENN
 
 
+def _identity_resample(X, y):
+    """No-op resampler body for FunctionSampler, used when classes are
+    already balanced. Must be a real module-level function, not a lambda --
+    joblib.dump() needs to pickle the fitted pipeline this ends up inside,
+    and lambdas aren't picklable."""
+    return X, y
+
+
 def get_oversampler(name="SMOTE", y=None, n_splits=5, sampling_ratio=None, random_state=42):
     """
     Oversampler that auto-reduces k_neighbors / n_neighbors so it does not crash inside CV folds.
@@ -58,6 +66,14 @@ def get_oversampler(name="SMOTE", y=None, n_splits=5, sampling_ratio=None, rando
     classes, counts = np.unique(y, return_counts=True)
     min_count = counts.min()
 
+    # Classes already perfectly balanced: there is nothing to oversample.
+    # ADASYN specifically raises ("No samples will be generated...") rather
+    # than no-op in this case (SMOTE-family samplers vary); a small, already
+    # labeled-balanced dataset (like this project's 59-row reference set)
+    # hits this legitimately, not as a rare edge case that should crash tuning.
+    if min_count == counts.max():
+        return FunctionSampler(func=_identity_resample)
+
     # minimum samples in the smallest class in a TRAINING fold:
     min_train_fold = int(np.floor(min_count * (n_splits - 1) / n_splits))
 
@@ -65,6 +81,16 @@ def get_oversampler(name="SMOTE", y=None, n_splits=5, sampling_ratio=None, rando
     safe_k = max(1, min(5, min_train_fold - 1))
 
     sampling_strategy = "not majority" if sampling_ratio is None else sampling_ratio
+    # A fixed float target only makes sense as an *increase* -- oversamplers
+    # can add minority samples, never remove majority ones. If the classes
+    # in this particular fold are already at or past the requested ratio
+    # (e.g. a small, near-balanced labeled set), asking for a lower ratio
+    # than what's already present raises inside imblearn. Fall back to the
+    # same "not majority" default already used when no ratio is given.
+    if isinstance(sampling_strategy, (int, float)):
+        current_ratio = min_count / counts.max()
+        if sampling_strategy <= current_ratio:
+            sampling_strategy = "not majority"
     name_l = str(name).lower()
 
     if name_l == "smote":
@@ -210,7 +236,17 @@ def load_data(model_path, monorail_paths):
 
     common_cols = df_reference.columns.intersection(df_data.columns).tolist()
 
-    df_reference_subset = df_reference[common_cols].copy()
+    # LeakageLabel is reference-only by design (Monorail field data has no
+    # ground truth) -- intersecting columns before selecting would drop it
+    # from both sides instead of letting it come through on the reference
+    # side and end up NaN on the Monorail side after concat, which is what
+    # this function's own docstring describes ("label typically missing ->
+    # remains NaN after merge").
+    reference_cols = common_cols + (
+        ["LeakageLabel"] if "LeakageLabel" in df_reference.columns and "LeakageLabel" not in common_cols else []
+    )
+
+    df_reference_subset = df_reference[reference_cols].copy()
     df_reference_subset["DataSource"] = 0
 
     df_data_subset = df_data[common_cols].copy()
@@ -657,13 +693,23 @@ def main():
     # -------------------------
     paths = project_paths()
     model_path = paths.external_data / "model.csv"
-    monorail_paths = [
-        paths.processed_data / "TestBrakefinal_data_raw_Dati01.csv",
-        paths.processed_data / "TestBrakefinal_data_raw_Dati06.csv",
-        paths.processed_data / "TestBrakefinal_data_raw_Dati27.csv",
-    ]
+    # Discover whichever kits Stage 2 has actually produced, rather than a
+    # hardcoded list -- the original 3-kit list (Dati01/06/27) assumed data
+    # that doesn't exist yet in this environment (only Dati01 has been run
+    # through the pipeline so far).
+    monorail_paths = sorted(paths.processed_data.glob("TestBrakefinal_data_raw_Dati*.csv"))
+    if not monorail_paths:
+        raise FileNotFoundError(
+            f"No TestBrakefinal_data_raw_Dati*.csv files found in {paths.processed_data}. "
+            "Run Stage 1+2 (python_port) for at least one kit first."
+        )
 
-    selected_features = ["Total_power_efficiency", "Std_delay_exp"]
+    # Std_delay_exp (original) only exists in model.csv's bench-reference
+    # schema, never in Stage 2's real field CSV -- a model trained on it
+    # could never score real kit data. Std_pipe is the closest-in-spirit
+    # replacement (a variability/spread metric, like the original) that's
+    # actually present in both schemas.
+    selected_features = ["Total_power_efficiency", "Std_pipe"]
     test_size = 0.2
     random_state = 42
 

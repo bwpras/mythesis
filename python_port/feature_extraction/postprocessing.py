@@ -69,6 +69,42 @@ KEEP_FIELDS = [
     "GPS_SensorError", "Gateway_VB_Error", "Gateway_CB_Error",
 ]
 
+# These are 0/1 flags, but populated from a mix of Python `bool` (e.g.
+# `phase["Non_Standard_Braking"] = a_boolean_expression`) and plain `int`
+# (guard-path fallbacks like `phase["Non_Standard_Braking"] = 0`) across
+# different phases/detectors. Left alone, a single DataFrame column built
+# from mixed bool/int values round-trips through CSV as mixed "True"/
+# "False"/"0"/"1" literal text -- and once that mix exists in a file,
+# every later `csv_export.export_feature_csv()` merge (read text back,
+# concat, rewrite) perpetuates it, since pandas infers a column's dtype
+# fresh from whatever literal tokens are already on disk. This is a
+# Python-only artifact (no MATLAB CSV export ever existed to be faithful
+# to -- see csv_export.py's docstring), so there's no fidelity reason to
+# preserve MATLAB-style dynamic typing here; normalize to a clean,
+# nullable integer dtype before the table is ever written.
+_FLAG_FIELDS = [
+    "First_phase_error",
+    "BC_BadStart", "BC_NormalBraking", "BC_LowBraking",
+    "BC_StartAboveThresh", "BC_FlatStartNearZero", "BC_AlreadyEngagedStart", "BC_ReleasingAtStart",
+    "EmergencyBrake_action", "Brake_action_cyl", "EmergencyBrake", "Non_Standard_Braking",
+    "MBP_PhaseClassification_error", "BC_PhaseClassification_error",
+    "MBP_braketiming_error", "BC_braketiming_error",
+    "SV_Error", "UB_Error", "UR_Error", "DS_Error",
+    "MBP_Sensor_error", "BC_SensorError", "WV_SensorError",
+    "GPS_SensorError", "Gateway_VB_Error", "Gateway_CB_Error",
+]
+
+
+def normalize_flag_dtypes(table: pd.DataFrame) -> pd.DataFrame:
+    """Casts every column in `_FLAG_FIELDS` present in `table` to pandas'
+    nullable `Int64`, so `True`/`False`/`0`/`1`/NaN all collapse to a single
+    consistent representation (0/1/<NA>) before the table is written or
+    merged. Safe to call on already-clean data (idempotent)."""
+    for col in _FLAG_FIELDS:
+        if col in table.columns:
+            table[col] = pd.array(table[col], dtype="Int64")
+    return table
+
 
 def _is_nan(x) -> bool:
     return x is None or (isinstance(x, float) and math.isnan(x))
@@ -243,4 +279,5 @@ def build_feature_table(test_brake_sets: list, file: Union[str, Path]) -> pd.Dat
     run_file, run_folder = _derive_run_file_folder(file)
     table["RunFile"] = run_file
     table["RunFolder"] = run_folder
+    table = normalize_flag_dtypes(table)
     return table
