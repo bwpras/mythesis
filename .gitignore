@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+*.asv
+*.autosave
+*.log
+.DS_Store
+Thumbs.db
+
+# Large data/artifact directories: tracked outside git (see data/README.md, PROJECT_STRUCTURE.md)
+/data/
+/archive/
+/outputs/
+
+# Local, machine-specific tool settings
+.claude/settings.local.json

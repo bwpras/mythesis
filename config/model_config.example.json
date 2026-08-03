@@ -1,0 +1,10 @@
+{
+  "reference_dataset": "data/external/model.csv",
+  "operational_feature_datasets": [
+    "data/processed/TestBrakefinal_data_raw_Dati01.csv",
+    "data/processed/TestBrakefinal_data_raw_Dati06.csv",
+    "data/processed/TestBrakefinal_data_raw_Dati27.csv"
+  ],
+  "binary_features": ["Total_power_efficiency", "Std_delay_exp"],
+  "multiclass_features": ["Total_power_efficiency", "Std_delay_exp"]
+}

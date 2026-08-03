@@ -1,0 +1,12 @@
+{
+  "raw_data_dir": "data/raw",
+  "interim_data_dir": "data/interim",
+  "processed_data_dir": "data/processed",
+  "external_data_dir": "data/external",
+  "features_dir": "outputs/features",
+  "models_dir": "outputs/models",
+  "predictions_dir": "outputs/predictions",
+  "reports_dir": "outputs/reports",
+  "figures_dir": "outputs/figures",
+  "logs_dir": "outputs/logs"
+}

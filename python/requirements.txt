@@ -1,0 +1,19 @@
+# Active training scripts
+joblib
+numpy
+pandas
+scikit-learn
+imbalanced-learn
+
+# Notebook-only packages confirmed by imports
+matplotlib
+seaborn
+folium
+geopandas
+shapely
+contextily
+plotly
+scipy
+statsmodels
+xgboost
+Pillow
