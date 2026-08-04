@@ -102,7 +102,7 @@ def kit_diagnostics(kit_id: str) -> dict:
 
     last_location = None
     if "GPS_Lat_last" in df.columns and "GPS_Long_last" in df.columns:
-        has_fix = df.dropna(subset=["GPS_Lat_last", "GPS_Long_last"])
+        has_fix = data_store.valid_gps_fix(df)
         if len(has_fix):
             latest = has_fix.sort_values("Start_brake_time_pipe").iloc[-1]
             last_location = {

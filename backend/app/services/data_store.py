@@ -32,6 +32,19 @@ def _kit_csv_path(kit_id: str) -> Path:
     return get_paths().processed / f"TestBrakefinal_data_raw_{kit_id}.csv"
 
 
+def valid_gps_fix(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows with a real GPS_Lat_last/GPS_Long_last fix. Excludes NaN *and*
+    near-(0,0) -- a classic GPS-cold-start/no-fix sentinel value, not an
+    actual location (would plot in the Gulf of Guinea for this fleet's real
+    Northern-Italy operating region). Found in ~0.2% of real fixes (4/1837
+    across all 9 kits, all in one kit) while building the route-coverage
+    map -- without this filter, one bad row can blow out that map's
+    auto-zoom to cover half the globe."""
+    has_fix = df.dropna(subset=["GPS_Lat_last", "GPS_Long_last"])
+    null_island = (has_fix["GPS_Lat_last"].abs() < 0.5) & (has_fix["GPS_Long_last"].abs() < 0.5)
+    return has_fix.loc[~null_island]
+
+
 def available_kit_ids() -> list[str]:
     processed = get_paths().processed
     if not processed.is_dir():
@@ -112,7 +125,7 @@ def list_locations(kit_id: str) -> list[dict]:
     df = load_kit_table(kit_id)
     if "GPS_Lat_last" not in df.columns or "GPS_Long_last" not in df.columns:
         return []
-    has_fix = df.dropna(subset=["GPS_Lat_last", "GPS_Long_last"])
+    has_fix = valid_gps_fix(df)
     has_fix = has_fix.drop_duplicates(subset=["GPS_Lat_last", "GPS_Long_last", "Start_brake_time_pipe"])
     out = has_fix[["event_id", "GPS_Lat_last", "GPS_Long_last", "Start_brake_time_pipe"]].rename(
         columns={"GPS_Lat_last": "lat", "GPS_Long_last": "lon", "Start_brake_time_pipe": "time"}

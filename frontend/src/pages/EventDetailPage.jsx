@@ -8,7 +8,13 @@ import { TILE_URL, TILE_ATTRIBUTION, dotIcon } from '../components/mapUtils'
 function EventMiniMap({ event }) {
   const lat = event.GPS_Lat_last
   const lon = event.GPS_Long_last
-  const hasFix = typeof lat === 'number' && typeof lon === 'number' && !Number.isNaN(lat) && !Number.isNaN(lon)
+  // Excludes near-(0,0) too, not just NaN: a GPS cold-start/no-fix
+  // sentinel, not a real location -- matches data_store.valid_gps_fix()
+  // on the backend (see that function's docstring for why).
+  const hasFix =
+    typeof lat === 'number' && typeof lon === 'number' &&
+    !Number.isNaN(lat) && !Number.isNaN(lon) &&
+    (Math.abs(lat) >= 0.5 || Math.abs(lon) >= 0.5)
 
   if (!hasFix) {
     return (

@@ -1,0 +1,46 @@
+{
+  "run_id": "20260220_135649",
+  "experiment_tag": "feat2",
+  "wv_bin": 1,
+  "random_state": 42,
+  "tuning_info": {
+    "RF (tuned)": {
+      "best_params": {
+        "clf__max_depth": 2,
+        "clf__min_samples_leaf": 2,
+        "clf__min_samples_split": 4,
+        "clf__n_estimators": 50
+      },
+      "best_score_mean": 0.9683241809795748
+    },
+    "SVM (tuned)": {
+      "best_params": {
+        "clf__C": 1,
+        "clf__class_weight": null,
+        "clf__gamma": "scale",
+        "clf__kernel": "rbf",
+        "clf__probability": true
+      },
+      "best_score_mean": 0.9384214316603697
+    },
+    "KNN (tuned)": {
+      "best_params": {
+        "clf__n_neighbors": 3,
+        "clf__weights": "distance"
+      },
+      "best_score_mean": 0.9705737026533486
+    }
+  },
+  "model_name": "SVM",
+  "saved_at": "2026-02-20T13:56:49",
+  "features": [
+    "Total_power_efficiency",
+    "Std_delay_exp"
+  ],
+  "artifacts": {
+    "full_pipeline": "20260220_135649_feat2_svm_pipeline.joblib",
+    "inference_pipeline": "20260220_135649_feat2_svm_inference.joblib",
+    "clf_bundle": "20260220_135649_feat2_svm_clf.joblib",
+    "meta_json": "20260220_135649_feat2_svm_meta.json"
+  }
+}
