@@ -5,7 +5,7 @@ import math
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..services import data_store, live_watch
+from ..services import data_store, live_timeseries, live_watch
 
 router = APIRouter(prefix="/api/live", tags=["live"])
 
@@ -62,6 +62,33 @@ def recent_events(kit_id: str, limit: int = 50):
     df = df.sort_values("Start_brake_time_pipe", ascending=False, na_position="last").head(limit)
     columns = [c for c in data_store.EVENT_LIST_COLUMNS + ["predicted_leakage"] if c in df.columns]
     return _clean(df[columns].to_dict(orient="records"))
+
+
+@router.get("/{kit_id}/events/{event_id}")
+def get_event(kit_id: str, event_id: int):
+    try:
+        return _clean(data_store.get_live_event(kit_id, event_id))
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{kit_id}/events/{event_id}/timeseries")
+def get_event_timeseries(kit_id: str, event_id: int):
+    """MBP + up to 4 BC pressure-vs-time arrays for one cycle, saved by
+    live_watch.py at the moment the cycle was detected (see
+    live_timeseries.py) -- a CSV row alone can't carry these, only the
+    scalar summary columns."""
+    try:
+        event = data_store.get_live_event(kit_id, event_id)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    mbp_id = event.get("MBP_ID")
+    start_time = event.get("Start_brake_time_pipe")
+    series = live_timeseries.load_phase_timeseries(kit_id, mbp_id, start_time) if mbp_id and start_time else None
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"No stored pressure history for event {event_id}")
+    return _clean(series)
 
 
 @router.get("")

@@ -6,6 +6,7 @@ import ModelPage from './pages/ModelPage.jsx'
 import JobsPage from './pages/JobsPage.jsx'
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx'
 import LivePage from './pages/LivePage.jsx'
+import LiveEventDetailPage from './pages/LiveEventDetailPage.jsx'
 
 const navLinkClass = ({ isActive }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -35,6 +36,7 @@ function App() {
           <Route path="/kits/:kitId/model" element={<ModelPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/live" element={<LivePage />} />
+          <Route path="/live/:kitId/events/:eventId" element={<LiveEventDetailPage />} />
         </Routes>
       </main>
     </div>

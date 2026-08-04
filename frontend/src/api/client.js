@@ -83,3 +83,13 @@ export async function listActiveWatchers() {
   const { data } = await api.get('/live')
   return data
 }
+
+export async function getLiveEvent(kitId, eventId) {
+  const { data } = await api.get(`/live/${kitId}/events/${eventId}`)
+  return data
+}
+
+export async function getLiveEventTimeseries(kitId, eventId) {
+  const { data } = await api.get(`/live/${kitId}/events/${eventId}/timeseries`)
+  return data
+}

@@ -46,6 +46,7 @@ from python_port.ingestion.filename_pattern import parse_bin_filename  # noqa: E
 from python_port.ingestion.live_ingest import parse_new_gps_file, parse_new_pressure_file  # noqa: E402
 from python_port.ingestion.live_precondition import check_live_precondition  # noqa: E402
 
+from . import live_timeseries
 from . import predict as predict_service
 
 
@@ -172,6 +173,21 @@ class _WatcherHandle:
         test_brake_sets = detect_subphases_sets(
             test_brake_sets, mbp_kwargs=_DEFAULT_MBP_KWARGS, bc_kwargs=_DEFAULT_BC_KWARGS, verbose=False,
         )
+
+        # Must run AFTER detect_subphases_sets() (needs Start_brake_time_pipe,
+        # which is only added by mbp_pipe_subphases.py's own state machine --
+        # NOT the raw TestBrake phase dict's MBP_StartTime, see
+        # live_timeseries.py's module docstring for why that distinction
+        # matters) and BEFORE compute_derived_fields()/build_feature_table()
+        # (which only keep KEEP_FIELDS' scalar columns -- the raw
+        # MBP_Time/MBP_Pressure/BC_Time/BC_Pressure arrays are gone after
+        # that). Best-effort: a save failure is a warning, not a reason to
+        # skip the CSV export these same phases still need.
+        try:
+            live_timeseries.save_phase_timeseries_from_sets(self.kit_id, test_brake_sets)
+        except Exception as exc:  # noqa: BLE001
+            self.status.last_error = f"timeseries save failed: {exc}"
+
         test_brake_sets = compute_derived_fields(test_brake_sets)
         table = build_feature_table(test_brake_sets, synthetic_file)
         if table.empty:

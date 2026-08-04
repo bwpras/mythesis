@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents } from '../api/client'
 
@@ -163,8 +164,15 @@ export default function LivePage() {
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {events.map((ev) => (
-                <tr key={ev.event_id} className="bg-white dark:bg-slate-950">
-                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{ev.Start_brake_time_pipe}</td>
+                <tr key={ev.event_id} className="bg-white hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900">
+                  <td className="px-4 py-3">
+                    <Link
+                      to={`/live/${kitId}/events/${ev.event_id}`}
+                      className="text-sky-600 hover:underline dark:text-sky-400"
+                    >
+                      {ev.Start_brake_time_pipe}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs">{ev.MBP_ID} / {ev.BC_ID} / {ev.WV_ID}</td>
                   <td className="px-4 py-3">
                     {ev.Max_pressure_pipe?.toFixed?.(2)} / {ev.Max_pressure_cyl?.toFixed?.(2)}

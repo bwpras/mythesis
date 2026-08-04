@@ -130,6 +130,17 @@ def get_event(kit_id: str, event_id: int, predictions: "pd.Series | None" = None
     return row.iloc[0].to_dict()
 
 
+def get_live_event(kit_id: str, event_id: int) -> dict:
+    """Same contract as get_event(), against the live CSV -- predicted_leakage
+    is already a column here (baked in at export time by live_watch.py), so
+    unlike get_event() there's no separate predictions Series to assign."""
+    df = load_live_kit_table(kit_id)
+    row = df.loc[df["event_id"] == event_id]
+    if row.empty:
+        raise KeyError(f"No live event {event_id} for kit {kit_id}")
+    return row.iloc[0].to_dict()
+
+
 def list_locations(kit_id: str) -> list[dict]:
     """Every distinct GPS fix this kit's events have -- for a "route
     coverage" map, not a table, so it skips pagination. Deduped by

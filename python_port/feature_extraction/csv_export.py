@@ -36,6 +36,7 @@ and the CSV the training scripts want is accumulated across a whole
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Union
 
@@ -112,6 +113,28 @@ def _composite_key(df: pd.DataFrame) -> pd.Series:
     return key
 
 
+def _replace_with_retry(tmp: Path, out_path: Path, attempts: int = 8, delay_s: float = 0.1) -> None:
+    """Path.replace() can fail on Windows with PermissionError (WinError 5,
+    "Access is denied") if another process has out_path open without
+    FILE_SHARE_DELETE at the moment of rename -- e.g. a dashboard request
+    thread's pd.read_csv() overlapping a live watcher's write, both live in
+    the same backend process while the frontend polls every couple seconds.
+    POSIX rename() has no such restriction (an already-open reader keeps
+    working against the old inode regardless), so this is Windows-only.
+    Short retry rides out the transient lock instead of surfacing what's a
+    timing race, not a real conflict, as a hard failure."""
+    last_exc: Exception = None
+    for attempt in range(attempts):
+        try:
+            tmp.replace(out_path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(delay_s)
+    raise last_exc
+
+
 def _merge_and_write(table: pd.DataFrame, out_path: Path, prefer_new: bool) -> Path:
     """Shared merge/dedupe/write body for export_feature_csv() and
     export_live_feature_csv() -- same composite-key logic either way, only
@@ -148,7 +171,7 @@ def _merge_and_write(table: pd.DataFrame, out_path: Path, prefer_new: bool) -> P
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(out_path.suffix + ".tmp")
     combined.to_csv(tmp, index=False)
-    tmp.replace(out_path)
+    _replace_with_retry(tmp, out_path)
     return out_path
 
 
