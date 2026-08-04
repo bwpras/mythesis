@@ -208,6 +208,29 @@ def predict_for_dashboard(bundle: dict, df: pd.DataFrame) -> pd.Series:
     return result
 
 
+def predictions_and_scope_for_kit(kit_id: str, df: "pd.DataFrame | None" = None) -> tuple:
+    """Best-effort: returns (predictions, in_scope) for one kit's full
+    event table, both None if there's no trained model yet or this kit's
+    data is missing a required feature -- prediction is an enrichment, not
+    a reason to fail whatever page is asking. Shared by kits.py (per-event
+    drill-down) and diagnostics.py (fleet-wide rollup) so "what counts as
+    in scope" can't quietly drift between the two, the way it already had
+    to be fixed twice before this existed.
+
+    Pass an already-loaded `df` (e.g. diagnostics.py's own load_kit_table()
+    call for its sensor/GPS error-rate math) to skip a redundant CSV read;
+    omit it to have this load the table itself."""
+    bundle = get_active_bundle()
+    if bundle is None:
+        return None, None
+    try:
+        if df is None:
+            df = data_store.load_kit_table(kit_id)
+        return predict_for_dashboard(bundle, df), in_scope_for_dashboard(df)
+    except KeyError:
+        return None, None
+
+
 def model_diagnostics() -> Optional[dict]:
     model_name = _pick_active_model()
     bundles = list_finished_bundles()

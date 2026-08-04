@@ -23,29 +23,21 @@ def _clean(obj):
     return obj
 
 
-def _predictions_for(kit_id: str):
-    """Best-effort: returns None (no predicted_leakage column) if there's
-    no trained model yet, or if this kit's data is missing a required
-    feature -- prediction is an enrichment, not a reason to fail the
-    whole events/kit response."""
-    bundle = predict.get_active_bundle()
-    if bundle is None:
-        return None
-    try:
-        df = data_store.load_kit_table(kit_id)
-        return predict.predict_for_dashboard(bundle, df)
-    except KeyError:
-        return None
-
-
 @router.get("")
 def list_kits():
     results = []
     for kid in data_store.available_kit_ids():
         summary = data_store.kit_summary(kid)
         summary["wagon_type"] = wagon_type_for_kit(kid)
-        preds = _predictions_for(kid)
-        summary["predicted_leakage_count"] = int(preds.sum()) if preds is not None else None
+        preds, _in_scope = predict.predictions_and_scope_for_kit(kid)
+        # preds.sum() alone would silently treat "nothing scored" (all-NaN,
+        # every event outside the model's trained regime) the same as
+        # "scored N events, 0 were leakage" -- pandas' sum() skips NaN by
+        # default, so both cases produce 0. Distinguishing them requires
+        # checking how many rows actually got a real 0/1 value first.
+        scored = preds.dropna() if preds is not None else None
+        summary["predicted_leakage_count"] = int((scored == 1).sum()) if scored is not None and len(scored) else None
+        summary["model_active"] = preds is not None
         results.append(_clean(summary))
     return results
 
@@ -63,8 +55,8 @@ def get_kit(kit_id: str):
 @router.get("/{kit_id}/events")
 def get_events(kit_id: str, offset: int = 0, limit: int = Query(default=50, le=500)):
     try:
-        preds = _predictions_for(kit_id)
-        return _clean(data_store.list_events(kit_id, offset=offset, limit=limit, predictions=preds))
+        preds, in_scope = predict.predictions_and_scope_for_kit(kit_id)
+        return _clean(data_store.list_events(kit_id, offset=offset, limit=limit, predictions=preds, in_scope=in_scope))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -72,8 +64,8 @@ def get_events(kit_id: str, offset: int = 0, limit: int = Query(default=50, le=5
 @router.get("/{kit_id}/events/{event_id}")
 def get_event(kit_id: str, event_id: int):
     try:
-        preds = _predictions_for(kit_id)
-        return _clean(data_store.get_event(kit_id, event_id, predictions=preds))
+        preds, in_scope = predict.predictions_and_scope_for_kit(kit_id)
+        return _clean(data_store.get_event(kit_id, event_id, predictions=preds, in_scope=in_scope))
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

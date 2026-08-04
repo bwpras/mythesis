@@ -103,13 +103,20 @@ def kit_summary(kit_id: str) -> dict:
 
 
 def list_events(kit_id: str, offset: int = 0, limit: int = 50,
-                 predictions: "pd.Series | None" = None) -> dict:
+                 predictions: "pd.Series | None" = None,
+                 in_scope: "pd.Series | None" = None) -> dict:
     df = load_kit_table(kit_id)
     if predictions is not None:
         df = df.assign(predicted_leakage=predictions)
+    if in_scope is not None:
+        df = df.assign(prediction_in_scope=in_scope)
     df = df.sort_values("Start_brake_time_pipe", na_position="last")
     total = len(df)
-    wanted = EVENT_LIST_COLUMNS + (["predicted_leakage"] if predictions is not None else [])
+    wanted = (
+        EVENT_LIST_COLUMNS
+        + (["predicted_leakage"] if predictions is not None else [])
+        + (["prediction_in_scope"] if in_scope is not None else [])
+    )
     columns = [c for c in wanted if c in df.columns]
     page = df.iloc[offset: offset + limit][columns]
     return {
@@ -120,10 +127,13 @@ def list_events(kit_id: str, offset: int = 0, limit: int = 50,
     }
 
 
-def get_event(kit_id: str, event_id: int, predictions: "pd.Series | None" = None) -> dict:
+def get_event(kit_id: str, event_id: int, predictions: "pd.Series | None" = None,
+               in_scope: "pd.Series | None" = None) -> dict:
     df = load_kit_table(kit_id)
     if predictions is not None:
         df = df.assign(predicted_leakage=predictions)
+    if in_scope is not None:
+        df = df.assign(prediction_in_scope=in_scope)
     row = df.loc[df["event_id"] == event_id]
     if row.empty:
         raise KeyError(f"No event {event_id} for kit {kit_id}")

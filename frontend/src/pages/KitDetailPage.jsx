@@ -6,6 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { listEvents, getKit, getKitLocations } from '../api/client'
 import { TILE_URL, TILE_ATTRIBUTION, dotIcon } from '../components/mapUtils'
+import PredictionBadge from '../components/PredictionBadge.jsx'
 
 const PAGE_SIZE = 25
 
@@ -125,17 +126,7 @@ export default function KitDetailPage() {
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      {ev.predicted_leakage === undefined || ev.predicted_leakage === null ? (
-                        <span className="text-slate-400">—</span>
-                      ) : ev.predicted_leakage ? (
-                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-500/20 dark:text-rose-300">
-                          leakage
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-                          healthy
-                        </span>
-                      )}
+                      <PredictionBadge predicted={ev.predicted_leakage} inScope={ev.prediction_in_scope} />
                     </td>
                   </tr>
                 ))}

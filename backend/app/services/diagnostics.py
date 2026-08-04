@@ -73,16 +73,14 @@ def kit_diagnostics(kit_id: str) -> dict:
     else:
         sensor_error_pct = None
 
+    # df is already loaded above -- pass it through so this doesn't pay
+    # for a second load_kit_table() call.
+    preds, _in_scope = predict.predictions_and_scope_for_kit(kit_id, df=df)
     predicted_leakage_pct = None
-    bundle = predict.get_active_bundle()
-    if bundle is not None:
-        try:
-            preds = predict.predict_for_dashboard(bundle, df)
-            scored = preds.dropna()
-            if len(scored):
-                predicted_leakage_pct = _pct(int((scored == 1).sum()), len(scored))
-        except KeyError:
-            pass
+    if preds is not None:
+        scored = preds.dropna()
+        if len(scored):
+            predicted_leakage_pct = _pct(int((scored == 1).sum()), len(scored))
 
     airbrake_status = _status(sensor_error_pct, AIRBRAKE_WARNING_SENSOR_ERROR_PCT, AIRBRAKE_CRITICAL_SENSOR_ERROR_PCT)
     if predicted_leakage_pct is not None:
@@ -124,7 +122,7 @@ def kit_diagnostics(kit_id: str) -> dict:
             # trained regime (WV_bin/BC_BadStart/Non_Standard_Braking) --
             # distinguishes that from "no model loaded at all" so the
             # dashboard can show "out of scope" instead of a bare dash.
-            "model_active": bundle is not None,
+            "model_active": preds is not None,
         },
         "gps_health": {
             "status": gps_status,

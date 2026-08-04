@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { listKits, getFleetDiagnostics } from '../api/client'
 import { TILE_URL, TILE_ATTRIBUTION, FALLBACK_CENTER, dotIcon } from '../components/mapUtils'
+import OutOfScopeBadge from '../components/OutOfScopeBadge.jsx'
 
 const wagonBadgeClass = {
   T3000: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300',
@@ -104,9 +105,13 @@ export default function OverviewPage() {
                 </td>
                 <td className="px-4 py-3">{k.sensor_error_count}</td>
                 <td className="px-4 py-3">
-                  {k.predicted_leakage_count === null
-                    ? <span className="text-slate-400">no model yet</span>
-                    : `${k.predicted_leakage_count} (${((k.predicted_leakage_count / k.event_count) * 100).toFixed(0)}%)`}
+                  {k.predicted_leakage_count !== null ? (
+                    `${k.predicted_leakage_count} (${((k.predicted_leakage_count / k.event_count) * 100).toFixed(0)}%)`
+                  ) : k.model_active ? (
+                    <OutOfScopeBadge title="No events for this kit fall within the model's validated regime (WV pressure, braking regularity, BC start) -- nothing to score." />
+                  ) : (
+                    <span className="text-slate-400">no model yet</span>
+                  )}
                 </td>
               </tr>
             ))}
