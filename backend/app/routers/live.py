@@ -60,8 +60,25 @@ def recent_events(kit_id: str, limit: int = 50):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     df = df.sort_values("Start_brake_time_pipe", ascending=False, na_position="last").head(limit)
-    columns = [c for c in data_store.EVENT_LIST_COLUMNS + ["predicted_leakage"] if c in df.columns]
+    # GPS_Lat_last/GPS_Long_last aren't in EVENT_LIST_COLUMNS (the batch
+    # kit-detail table never renders a map per row) -- the Live page's
+    # "Recent cycles" cards embed EventMiniMap directly on this list
+    # response, unlike the batch flow where a map only appears after
+    # navigating to the single-event page, so this list must carry them too.
+    wanted = data_store.EVENT_LIST_COLUMNS + ["predicted_leakage", "prediction_in_scope", "GPS_Lat_last", "GPS_Long_last"]
+    columns = [c for c in wanted if c in df.columns]
     return _clean(df[columns].to_dict(orient="records"))
+
+
+@router.delete("/{kit_id}/events")
+def clear_events(kit_id: str):
+    """Deletes this kit's live CSV + saved pressure history -- a full reset
+    for starting a fresh demo run. 400 if the watcher for this kit is
+    still running (stop it first)."""
+    try:
+        return _clean(live_watch.clear_live_events(kit_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{kit_id}/events/{event_id}")

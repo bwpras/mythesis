@@ -62,6 +62,24 @@ def _store_dir(kit_id: str) -> Path:
     return get_paths().dashboard_store / "live_timeseries" / kit_id
 
 
+def clear_timeseries(kit_id: str) -> int:
+    """Deletes every saved pressure-time-history JSON for this kit -- part
+    of a full live-data reset (see live_watch.py's clear_live_events()).
+    Returns the number of files removed."""
+    out_dir = _store_dir(kit_id)
+    if not out_dir.is_dir():
+        return 0
+    removed = 0
+    for path in out_dir.glob("*.json"):
+        path.unlink()
+        removed += 1
+    try:
+        out_dir.rmdir()
+    except OSError:
+        pass  # non-empty (unexpected leftover file) -- not fatal, leave it
+    return removed
+
+
 def _series_to_lists(time: Optional[np.ndarray], pressure: Optional[np.ndarray]) -> dict:
     if time is None or pressure is None or len(time) == 0:
         return {"time": [], "pressure": []}

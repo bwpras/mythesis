@@ -194,3 +194,16 @@ def export_live_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new
     phase (e.g. after a crash-recovery re-feed) dedupes correctly here the
     same way a re-run batch job already does."""
     return _merge_and_write(table, _live_output_path(dataset_key), prefer_new)
+
+
+def clear_live_feature_csv(dataset_key: str) -> bool:
+    """Deletes the live CSV for one kit -- part of a full live-data reset
+    (see backend/app/services/live_watch.py's clear_live_events()), so a
+    demo can start from a clean slate instead of accumulating rows across
+    every past replay run. Only ever touches data/processed/live/, never
+    the batch corpus. Returns whether a file was actually removed."""
+    path = _live_output_path(dataset_key)
+    if path.is_file():
+        path.unlink()
+        return True
+    return False

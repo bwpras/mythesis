@@ -79,6 +79,11 @@ export async function getLiveEvents(kitId, { limit = 50 } = {}) {
   return data
 }
 
+export async function clearLiveEvents(kitId) {
+  const { data } = await api.delete(`/live/${kitId}/events`)
+  return data
+}
+
 export async function listActiveWatchers() {
   const { data } = await api.get('/live')
   return data

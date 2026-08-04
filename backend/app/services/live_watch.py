@@ -37,7 +37,7 @@ import pandas as pd  # noqa: E402
 
 from python_port.feature_extraction.braking_detection import BrakingCycleDetector, ChannelSchema  # noqa: E402
 from python_port.feature_extraction.build_test_brake_sets import build_test_brake_sets  # noqa: E402
-from python_port.feature_extraction.csv_export import export_live_feature_csv  # noqa: E402
+from python_port.feature_extraction.csv_export import clear_live_feature_csv, export_live_feature_csv  # noqa: E402
 from python_port.feature_extraction.detect_subphases_sets import detect_subphases_sets  # noqa: E402
 from python_port.feature_extraction.filtering import CausalFilterState  # noqa: E402
 from python_port.feature_extraction.pipeline import _DEFAULT_BC_KWARGS, _DEFAULT_MBP_KWARGS  # noqa: E402
@@ -193,6 +193,10 @@ class _WatcherHandle:
         if table.empty:
             return
 
+        # Model-independent -- computed even with no active bundle, so the
+        # dashboard can still show "out of scope" instead of a bare dash.
+        table = table.assign(prediction_in_scope=predict_service.in_scope_for_dashboard(table))
+
         bundle = predict_service.get_active_bundle()
         if bundle is not None:
             try:
@@ -274,3 +278,20 @@ def list_active_watchers() -> List[dict]:
     with _lock:
         handles = list(_watchers.values())
     return [h.status.to_dict() for h in handles]
+
+
+def clear_live_events(kit_id: str) -> dict:
+    """Deletes this kit's live CSV and saved pressure-time-history JSON
+    files -- a full reset for starting a fresh demo run instead of
+    accumulating rows across every past replay. Refuses while a watcher
+    for this kit is running: its next flush would just re-add rows, and
+    deleting the CSV out from under an active writer invites a race no
+    retry logic should have to paper over -- stop it first."""
+    with _lock:
+        handle = _watchers.get(kit_id)
+        if handle is not None and handle.status.is_running:
+            raise ValueError(f"Stop the watcher for {kit_id} before clearing its events.")
+
+    removed_csv = clear_live_feature_csv(kit_id)
+    removed_timeseries = live_timeseries.clear_timeseries(kit_id)
+    return {"kit_id": kit_id, "removed_csv": removed_csv, "removed_timeseries_files": removed_timeseries}

@@ -72,14 +72,32 @@ def prepare_for_inference(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in _LABEL_COLUMNS if c in df.columns])
 
 
-def quality_filtered(df: pd.DataFrame) -> pd.DataFrame:
-    """Port of test_main_binary.ipynb's df_wv1 filter: WV_bin==1 (the
-    regime the model was trained on) & clean braking only."""
-    return df.loc[
+def in_scope_mask(df: pd.DataFrame) -> pd.Series:
+    """Boolean mask: rows within the model's validated regime -- the exact
+    condition quality_filtered() selects on, exposed separately so callers
+    can label an out-of-regime row (e.g. a warning badge) instead of just
+    leaving its prediction blank with no explanation."""
+    return (
         df["Non_Standard_Braking"].eq(0)
         & df["BC_BadStart"].eq(0)
         & df["WV_bin"].eq(1)
-    ]
+    )
+
+
+def quality_filtered(df: pd.DataFrame) -> pd.DataFrame:
+    """Port of test_main_binary.ipynb's df_wv1 filter: WV_bin==1 (the
+    regime the model was trained on) & clean braking only."""
+    return df.loc[in_scope_mask(df)]
+
+
+def in_scope_for_dashboard(df: pd.DataFrame) -> pd.Series:
+    """Per-row flag: True if this row falls within predict_for_dashboard()'s
+    scoring regime and would receive a real 0/1 prediction instead of NaN.
+    Model-independent (the regime check needs WV_bin/Non_Standard_Braking/
+    BC_BadStart, not a trained pipeline) -- lets the dashboard distinguish
+    "out of the model's trained scope" from "no model loaded" instead of
+    collapsing both into the same blank dash."""
+    return in_scope_mask(prepare_for_inference(df))
 
 
 def predict(bundle: dict, df: pd.DataFrame) -> pd.Series:

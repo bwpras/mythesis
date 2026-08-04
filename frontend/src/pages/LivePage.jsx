@@ -1,9 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents } from '../api/client'
+import { startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents, clearLiveEvents } from '../api/client'
+import LiveCyclePlotCard from '../components/LiveCyclePlotCard.jsx'
+import PredictionBadge from '../components/PredictionBadge.jsx'
 
 const POLL_MS = 2000
+// A cycle is exported as one row per candidate BC/WV pairing (up to 4, all
+// sharing the same Start_brake_time_pipe) -- a plot is per CYCLE, not per
+// row, so this caps how many distinct cycles get their own chart fetched
+// and rendered at once (Plotly isn't free to mount repeatedly).
+const MAX_PLOTTED_CYCLES = 5
 
 export default function LivePage() {
   const [kitId, setKitId] = useState('Dati10')
@@ -47,6 +54,35 @@ export default function LivePage() {
       queryClient.invalidateQueries({ queryKey: ['live-status', kitId] })
     },
   })
+
+  const clearMutation = useMutation({
+    mutationFn: () => clearLiveEvents(kitId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['live-events', kitId] })
+    },
+  })
+
+  // events is already sorted desc by Start_brake_time_pipe (see
+  // routers/live.py's recent_events()) -- one row per candidate BC/WV
+  // pairing (up to 4) means duplicates for the same cycle land adjacently.
+  // Which pairing is "the real one" for a phase isn't tagged anywhere, so
+  // picking an arbitrary row as the cycle's representative can surface a
+  // candidate that never got scored even when a sibling row did -- prefer
+  // whichever of the 4 has a real prediction, so the badge shown reflects
+  // the best information available for that cycle, not just the first row.
+  const recentCycles = useMemo(() => {
+    if (!events) return []
+    const isScored = (row) => row.predicted_leakage !== null && row.predicted_leakage !== undefined
+    const byTime = new Map()
+    for (const ev of events) {
+      const key = ev.Start_brake_time_pipe
+      const existing = byTime.get(key)
+      if (!existing || (isScored(ev) && !isScored(existing))) {
+        byTime.set(key, ev)
+      }
+    }
+    return Array.from(byTime.values()).slice(0, MAX_PLOTTED_CYCLES)
+  }, [events])
 
   const inputClass =
     'rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900'
@@ -147,6 +183,38 @@ export default function LivePage() {
         </div>
       )}
 
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Recent cycles</h2>
+        <button
+          disabled={isRunning || clearMutation.isPending || !events || events.length === 0}
+          title={isRunning ? 'Stop the watcher first' : undefined}
+          onClick={() => {
+            if (window.confirm(`Delete all stored live events and pressure history for ${kitId}? This cannot be undone.`)) {
+              clearMutation.mutate()
+            }
+          }}
+          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          {clearMutation.isPending ? 'Clearing...' : 'Clear events'}
+        </button>
+      </div>
+      {clearMutation.isError && (
+        <p className="mt-2 text-rose-600 dark:text-rose-400">
+          {String(clearMutation.error?.response?.data?.detail ?? clearMutation.error)}
+        </p>
+      )}
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        Pressure history and GPS fix for the {MAX_PLOTTED_CYCLES} most recently completed cycles.
+      </p>
+      {recentCycles.length === 0 && (
+        <p className="mt-2 text-slate-500 dark:text-slate-400">No completed cycles yet.</p>
+      )}
+      <div className="mt-3 space-y-4">
+        {recentCycles.map((ev) => (
+          <LiveCyclePlotCard key={ev.Start_brake_time_pipe} kitId={kitId} event={ev} />
+        ))}
+      </div>
+
       <h2 className="mt-8 text-lg font-semibold tracking-tight">Live events</h2>
       {(!events || events.length === 0) && (
         <p className="mt-2 text-slate-500 dark:text-slate-400">No completed cycles yet.</p>
@@ -178,17 +246,7 @@ export default function LivePage() {
                     {ev.Max_pressure_pipe?.toFixed?.(2)} / {ev.Max_pressure_cyl?.toFixed?.(2)}
                   </td>
                   <td className="px-4 py-3">
-                    {ev.predicted_leakage === undefined || ev.predicted_leakage === null ? (
-                      <span className="text-slate-400">—</span>
-                    ) : ev.predicted_leakage ? (
-                      <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-500/20 dark:text-rose-300">
-                        leakage
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-                        healthy
-                      </span>
-                    )}
+                    <PredictionBadge predicted={ev.predicted_leakage} inScope={ev.prediction_in_scope} />
                   </td>
                 </tr>
               ))}
