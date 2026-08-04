@@ -11,7 +11,13 @@ they're still wanted for reference.
 | `matlab/utilities/savetocsv.m` | References an undefined variable (`Test_features`) that doesn't exist anywhere in the current pipeline's naming (`Test`/`TestBrake`/`TBsets_out`/`TestBrakes_table`); stale leftover from an earlier variable-naming scheme. |
 | `matlab/visualization/figure_extract.m` | Hardcoded to `.fig` files (`Malfunction H 2_update_new.fig`, `ManualBrakeCompare3.fig`) that don't exist anywhere in this repo. |
 | `matlab/visualization/figure_subplot2oneplot.m` | Hardcoded to `EmergencyBraking.fig`, which also doesn't exist anywhere in this repo. |
-| `python/notebooks_backup/Initial Data Exploration.rar` | Redundant compressed backup of files already present, extracted, and current alongside it in `python/notebooks/exploration/initial_data_exploration/`. |
+
+`python/notebooks_backup/Initial Data Exploration.rar` was also moved here
+for the same reason (redundant compressed backup of files already present
+in `python/notebooks/exploration/initial_data_exploration/`), then removed
+entirely from git history (including this misc/ copy) on 2026-08-04 to
+shrink the repo for GitHub — it's a pure backup with zero unique content,
+unlike the four `.m` files above which are kept for reference.
 
 ## Deliberately left in place
 

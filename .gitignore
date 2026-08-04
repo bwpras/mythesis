@@ -16,3 +16,18 @@ Thumbs.db
 
 # Local, machine-specific tool settings
 .claude/settings.local.json
+
+# Compressed backups: always redundant with their extracted contents by
+# nature (found and removed one growing .git to 91MB on 2026-08-04).
+*.rar
+*.zip
+*.7z
+
+# Data files that ended up alongside notebook code instead of under data/
+# (the notebooks themselves in this folder stay tracked, cleared of output).
+/python/notebooks/exploration/initial_data_exploration/*.csv
+/python/notebooks/exploration/initial_data_exploration/*.xlsx
+/python/notebooks/exploration/initial_data_exploration/*.gif
+/python/notebooks/exploration/initial_data_exploration/*.pdf
+/python/notebooks/exploration/initial_data_exploration/saved_excel/
+/python/notebooks/exploration/initial_data_exploration/saved_image/
