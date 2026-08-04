@@ -27,6 +27,15 @@ class StartWatcherRequest(BaseModel):
     poll_interval_s: float = 1.0
 
 
+@router.get("/kits")
+def list_kits_readiness():
+    """Every kit with processed batch data, and whether it's ready for a
+    live watcher (locked BC/WV pairing + cached sensor labels) -- powers
+    the Live page's kit picker so an unready kit is flagged before you
+    even try to start it, not just via a 400 after clicking Start."""
+    return _clean(live_watch.list_kit_readiness())
+
+
 @router.post("/{kit_id}/start")
 def start(kit_id: str, req: StartWatcherRequest):
     try:

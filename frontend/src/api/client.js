@@ -59,6 +59,11 @@ export async function getKitLocations(kitId) {
   return data
 }
 
+export async function getLiveKitsReadiness() {
+  const { data } = await api.get('/live/kits')
+  return data
+}
+
 export async function startLiveWatcher(kitId, watchDir, pollIntervalS = 1.0) {
   const { data } = await api.post(`/live/${kitId}/start`, { watch_dir: watchDir, poll_interval_s: pollIntervalS })
   return data

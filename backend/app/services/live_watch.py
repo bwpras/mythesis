@@ -46,7 +46,7 @@ from python_port.ingestion.filename_pattern import parse_bin_filename  # noqa: E
 from python_port.ingestion.live_ingest import parse_new_gps_file, parse_new_pressure_file  # noqa: E402
 from python_port.ingestion.live_precondition import check_live_precondition  # noqa: E402
 
-from . import live_timeseries
+from . import data_store, live_timeseries
 from . import predict as predict_service
 
 
@@ -278,6 +278,21 @@ def list_active_watchers() -> List[dict]:
     with _lock:
         handles = list(_watchers.values())
     return [h.status.to_dict() for h in handles]
+
+
+def list_kit_readiness() -> List[dict]:
+    """For every kit with processed batch data, whether it's ready for a
+    live watcher (cached sensor labels + a LOCKED BC/WV pairing registry --
+    see live_precondition.py) and why not if not. Lets the frontend build
+    an informative kit picker instead of a free-text field the user has to
+    already know is valid, and surfaces the same "run the batch pipeline
+    first" guidance start_watcher() would otherwise only reveal after a
+    failed start attempt."""
+    results = []
+    for kit_id in data_store.available_kit_ids():
+        pre = check_live_precondition(kit_id)
+        results.append({"kit_id": kit_id, "ready": pre.ok, "reasons": pre.reasons})
+    return results
 
 
 def clear_live_events(kit_id: str) -> dict:

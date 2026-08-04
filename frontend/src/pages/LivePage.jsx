@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents, clearLiveEvents } from '../api/client'
+import {
+  startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents, clearLiveEvents, getLiveKitsReadiness,
+} from '../api/client'
 import LiveCyclePlotCard from '../components/LiveCyclePlotCard.jsx'
 import PredictionBadge from '../components/PredictionBadge.jsx'
 
@@ -12,10 +14,33 @@ const POLL_MS = 2000
 // and rendered at once (Plotly isn't free to mount repeatedly).
 const MAX_PLOTTED_CYCLES = 5
 
+// Plain localStorage, not a generic hook -- this is the only place in the
+// app that needs to survive a route change. React Router fully unmounts
+// LivePage on navigation, so component state (useState alone) resets to
+// its initial value every time you tab away and back; these two fields
+// are exactly the ones a user re-selects most often mid-demo.
+const STORAGE_KIT_ID = 'live.kitId'
+const STORAGE_WATCH_DIR = 'live.watchDir'
+
 export default function LivePage() {
-  const [kitId, setKitId] = useState('Dati10')
-  const [watchDir, setWatchDir] = useState('')
+  const [kitId, setKitIdState] = useState(() => localStorage.getItem(STORAGE_KIT_ID) || 'Dati10')
+  const [watchDir, setWatchDirState] = useState(() => localStorage.getItem(STORAGE_WATCH_DIR) || '')
   const queryClient = useQueryClient()
+
+  const setKitId = (id) => {
+    setKitIdState(id)
+    localStorage.setItem(STORAGE_KIT_ID, id)
+  }
+  const setWatchDir = (dir) => {
+    setWatchDirState(dir)
+    localStorage.setItem(STORAGE_WATCH_DIR, dir)
+  }
+
+  const { data: kitsReadiness } = useQuery({
+    queryKey: ['live-kits-readiness'],
+    queryFn: getLiveKitsReadiness,
+  })
+  const selectedReadiness = kitsReadiness?.find((k) => k.kit_id === kitId)
 
   const { data: status, isError: statusError, error: statusErrorObj } = useQuery({
     queryKey: ['live-status', kitId],
@@ -100,12 +125,23 @@ export default function LivePage() {
       <div className="mt-6 flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
           Kit
-          <input
+          <select
             className={inputClass}
             value={kitId}
             onChange={(e) => setKitId(e.target.value)}
             disabled={isRunning}
-          />
+          >
+            {/* Keeps a persisted-but-no-longer-listed kit selectable rather than
+                the browser silently falling back to whatever option renders first. */}
+            {kitId && !kitsReadiness?.some((k) => k.kit_id === kitId) && (
+              <option value={kitId}>{kitId}</option>
+            )}
+            {kitsReadiness?.map((k) => (
+              <option key={k.kit_id} value={k.kit_id}>
+                {k.kit_id}{k.ready ? '' : ' (needs bootstrap)'}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
           Watch folder (server-side path)
@@ -119,7 +155,8 @@ export default function LivePage() {
         </label>
         {!isRunning ? (
           <button
-            disabled={startMutation.isPending || !kitId || !watchDir}
+            disabled={startMutation.isPending || !kitId || !watchDir || (selectedReadiness && !selectedReadiness.ready)}
+            title={selectedReadiness && !selectedReadiness.ready ? selectedReadiness.reasons.join(' ') : undefined}
             onClick={() => startMutation.mutate()}
             className="rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
           >
@@ -135,6 +172,12 @@ export default function LivePage() {
           </button>
         )}
       </div>
+
+      {selectedReadiness && !selectedReadiness.ready && (
+        <p className="mt-3 text-amber-600 dark:text-amber-400">
+          ⚠ {selectedReadiness.reasons.join(' ')}
+        </p>
+      )}
 
       {startMutation.isError && (
         <p className="mt-3 text-rose-600 dark:text-rose-400">{String(startMutation.error?.response?.data?.detail ?? startMutation.error)}</p>
