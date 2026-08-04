@@ -1,149 +1,208 @@
-"""Wraps a saved training-pipeline joblib bundle (model + scaler/imputer +
-feature list + metadata, as produced by python/scripts/train_binary_classifier.py's
-save_model_artifacts()) for inference against Stage 2's feature CSVs.
+"""Inference against the real, finished-thesis model bundles
+(outputs/models/finished_thesis/*_inference.joblib) -- the actual models
+validated in the thesis, not a retrain. See module-level docs in
+wagon_type.py for the kit/wagon-type mapping this all builds on.
 
 Deliberately NOT wired to outputs/models/artifacts_leakage/ -- that bundle's
 60 features are ~65% drawn from model.csv's raw reference-only schema
 (*_exp-suffixed bench-test fields) that Stage 2's real Monorail CSV export
-never produces (confirmed by diffing its metadata.joblib feature_order
-against postprocessing.KEEP_FIELDS: only 22/63 features overlap). It cannot
-score real field data as-is. This module instead loads whatever bundle the
-(now-fixed) training scripts actually produced against real Dati01 data.
+never produced before the postprocessing.py fix (confirmed by diffing its
+metadata.joblib feature_order against KEEP_FIELDS: only 22/63 overlapped).
+
+Model selection is data-driven, not hardcoded: mirrors the thesis's own
+test_main_binary.ipynb exactly -- run all 3 models (knn/rf/svm) against the
+real generalization-test kits (T3000's held-out Dati30 + every other-wagon
+kit), compute False Alarm Rate per wagon type (ground truth assumed healthy
+for this in-service field data, matching the notebook's own y_true=0
+assumption), and treat the model with the lowest mean FAR as "active".
 """
 from __future__ import annotations
 
-import re
+import json
 from pathlib import Path
 from typing import Optional
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from ..config import get_paths
+from . import data_store
+from .wagon_type import GENERALIZATION_TEST_KITS, wagon_type_for_kit
+
+_LABEL_COLUMNS = ["LeakageLabel", "label", "Malfunction"]
 
 
-def _sanitize_name(s: str) -> str:
-    """Mirrors train_binary_classifier.py's sanitize_name() exactly -- must
-    stay identical, since it's used here to reconstruct filenames that
-    script already wrote, not to write new ones."""
-    return str(s).lower().replace(" ", "_").replace("(", "").replace(")", "")
+def _finished_models_dir() -> Path:
+    return get_paths().models / "finished_thesis"
 
 
-def latest_pipeline_bundle(experiment_tag: str = "feat2") -> Optional[Path]:
-    """Picks the best model from the most recent training run, using that
-    run's own `_split_test_summary.csv` (already FAR-first ranked by
-    evaluate_on_test() -- see train_binary_classifier.py) rather than an
-    arbitrary file-sort tiebreak across same-run model files.
-
-    Looks directly under outputs/models/ (non-recursive): historical_saved_models/
-    and artifacts_leakage/ hold older/unrelated runs that would otherwise be
-    mistaken for "latest" by filename sort."""
-    models_dir = get_paths().models
-    summaries = sorted(models_dir.glob(f"*_{experiment_tag}_split_test_summary.csv"))
-    if not summaries:
-        return None
-    latest_summary = summaries[-1]
-
-    m = re.match(r"(\d{8}_\d{6})_", latest_summary.name)
-    if not m:
-        return None
-    run_id = m.group(1)
-
-    ranked = pd.read_csv(latest_summary)
-    if ranked.empty:
-        return None
-    best_model_name = _sanitize_name(ranked.iloc[0]["Model"])
-
-    bundle_path = models_dir / f"{run_id}_{experiment_tag}_{best_model_name}_pipeline.joblib"
-    return bundle_path if bundle_path.is_file() else None
-
-
-def _register_main_shims() -> None:
-    """train_binary_classifier.py is meant to be run directly
-    (`python python/scripts/train_binary_classifier.py`, per docs/python_pipeline.md),
-    so at save time its helper functions' `__module__` is `"__main__"` --
-    that's what gets baked into the pickled pipeline (it references
-    `_rnn_clean_healthy_only`/`_identity_resample` via FunctionSampler).
-    Unpickling from a different process (this backend) needs those same
-    names reachable on `sys.modules["__main__"]`, or joblib.load() raises
-    AttributeError. This registers them there without re-running the
-    script (importing it only defines functions -- `main()` is guarded by
-    `if __name__ == "__main__":`)."""
-    import sys
-
-    main_module = sys.modules["__main__"]
-    if hasattr(main_module, "_rnn_clean_healthy_only"):
-        return
-
-    repo_root = get_paths().root
-    scripts_dir = str(repo_root / "python" / "scripts")
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-    import train_binary_classifier as _tbc
-
-    main_module._rnn_clean_healthy_only = _tbc._rnn_clean_healthy_only
-    main_module._identity_resample = _tbc._identity_resample
+def list_finished_bundles() -> dict[str, Path]:
+    """{model_name: path}, e.g. {'20260220_135649_feat2_rf': Path(...)}."""
+    models_dir = _finished_models_dir()
+    if not models_dir.is_dir():
+        return {}
+    return {p.stem.replace("_inference", ""): p for p in sorted(models_dir.glob("*_inference.joblib"))}
 
 
 _bundle_cache: dict[Path, dict] = {}
 
 
 def load_bundle(path: Path) -> dict:
-    """Cached by path (immutable once written -- a re-run pipeline job
-    always writes a new timestamped filename, never overwrites one)."""
+    """Cached by path (immutable once written)."""
     if path not in _bundle_cache:
-        _register_main_shims()
         _bundle_cache[path] = joblib.load(path)
     return _bundle_cache[path]
 
 
-def get_active_bundle(experiment_tag: str = "feat2") -> Optional[dict]:
-    path = latest_pipeline_bundle(experiment_tag)
-    return load_bundle(path) if path else None
+def add_wv_bin(df: pd.DataFrame) -> pd.DataFrame:
+    """Port of test_main_binary.ipynb's add_wv_bin(): 0 if <2, 2 if >3, else 1."""
+    df = df.copy()
+    df["WV_bin"] = df["WV_MeanPressure"].apply(
+        lambda p: np.nan if pd.isna(p) else (0 if p < 2 else (2 if p > 3 else 1))
+    )
+    return df
 
 
-def model_diagnostics(experiment_tag: str = "feat2") -> Optional[dict]:
-    """Metadata + evaluation metrics for whichever model get_active_bundle()
-    would use, read from the sidecar files train_binary_classifier.py's
-    save_model_artifacts() already writes next to the bundle -- no need to
-    inspect the fitted pipeline object itself for this."""
-    import json
+def prepare_for_inference(df: pd.DataFrame) -> pd.DataFrame:
+    """Port of load_and_prepare_monorail() + remove_label_columns(): add
+    WV_bin, drop any label columns that shouldn't be visible at inference
+    time (matches the notebook's own safety check)."""
+    df = add_wv_bin(df)
+    return df.drop(columns=[c for c in _LABEL_COLUMNS if c in df.columns])
 
-    bundle_path = latest_pipeline_bundle(experiment_tag)
-    if bundle_path is None:
-        return None
 
-    meta_path = bundle_path.with_name(bundle_path.name.replace("_pipeline.joblib", "_meta.json"))
-    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
-
-    m = re.match(r"(\d{8}_\d{6})_", bundle_path.name)
-    run_id = m.group(1) if m else None
-    summary_path = bundle_path.parent / f"{run_id}_{experiment_tag}_split_test_summary.csv"
-    eval_row = None
-    if summary_path.is_file():
-        ranked = pd.read_csv(summary_path)
-        model_name = meta.get("model_name")
-        match = ranked.loc[ranked["Model"] == model_name] if model_name else ranked.iloc[[0]]
-        if not match.empty:
-            eval_row = match.iloc[0].to_dict()
-
-    return {
-        "bundle_path": str(bundle_path),
-        "model_name": meta.get("model_name"),
-        "features": meta.get("features"),
-        "saved_at": meta.get("saved_at"),
-        "test_metrics": eval_row,
-    }
+def quality_filtered(df: pd.DataFrame) -> pd.DataFrame:
+    """Port of test_main_binary.ipynb's df_wv1 filter: WV_bin==1 (the
+    regime the model was trained on) & clean braking only."""
+    return df.loc[
+        df["Non_Standard_Braking"].eq(0)
+        & df["BC_BadStart"].eq(0)
+        & df["WV_bin"].eq(1)
+    ]
 
 
 def predict(bundle: dict, df: pd.DataFrame) -> pd.Series:
-    """Runs bundle['pipeline'] (imputer+scaler+clf) over bundle['features']
-    columns of `df`. Raises KeyError up front (not deep inside sklearn) if
-    a required feature is missing -- a fast, legible failure over a cryptic
-    one, since this is exactly the class of mismatch the artifacts_leakage
-    bundle silently can't satisfy (see module docstring)."""
+    """Runs bundle['pipeline'] over bundle['features']. Raises KeyError up
+    front (not deep inside sklearn) if a required feature is missing."""
     missing = [f for f in bundle["features"] if f not in df.columns]
     if missing:
         raise KeyError(f"Input data is missing required model features: {missing}")
     X = df[bundle["features"]]
     return pd.Series(bundle["pipeline"].predict(X), index=df.index)
+
+
+def compute_far_by_wagon_type() -> list[dict]:
+    """Exact port of test_main_binary.ipynb's FAR-by-wagon-type table:
+    every finished model scored against the real generalization-test kits,
+    grouped by wagon type, with ground truth assumed healthy (this is
+    in-service field data with no known faults -- a "1" prediction here is
+    a false alarm by construction, same assumption the thesis notebook
+    makes)."""
+    frames = []
+    for kit_id in GENERALIZATION_TEST_KITS:
+        try:
+            df = data_store.load_kit_table(kit_id)
+        except FileNotFoundError:
+            continue
+        df["WagonType"] = wagon_type_for_kit(kit_id)
+        frames.append(df)
+    if not frames:
+        return []
+
+    df_test = pd.concat(frames, ignore_index=True)
+    df_test = prepare_for_inference(df_test)
+    df_wv1 = quality_filtered(df_test)
+
+    rows = []
+    for model_name, bundle_path in list_finished_bundles().items():
+        bundle = load_bundle(bundle_path)
+        missing = [f for f in bundle["features"] if f not in df_wv1.columns]
+        if missing:
+            continue
+        y_pred = bundle["pipeline"].predict(df_wv1[bundle["features"]])
+        df_res = df_wv1.assign(Prediction=y_pred)
+        for wagon, df_w in df_res.groupby("WagonType"):
+            fp = int((df_w["Prediction"] == 1).sum())
+            n = len(df_w)
+            rows.append({
+                "Model": model_name,
+                "WagonType": wagon,
+                "FP": fp,
+                "TN": n - fp,
+                "TotalSamples": n,
+                "FalseAlarmRate_pct": round(100 * fp / n, 2) if n > 0 else None,
+            })
+    return sorted(rows, key=lambda r: (r["WagonType"], r["FalseAlarmRate_pct"] or 0))
+
+
+_active_model_cache: Optional[str] = None
+
+
+def _pick_active_model() -> Optional[str]:
+    """Model with the lowest mean False Alarm Rate across wagon types, from
+    compute_far_by_wagon_type(). Cached for the process lifetime -- the
+    underlying real CSVs don't change at runtime."""
+    global _active_model_cache
+    if _active_model_cache is not None:
+        return _active_model_cache
+
+    far_rows = compute_far_by_wagon_type()
+    if not far_rows:
+        bundles = list_finished_bundles()
+        _active_model_cache = next(iter(bundles), None)
+        return _active_model_cache
+
+    far_df = pd.DataFrame(far_rows)
+    mean_far = far_df.groupby("Model")["FalseAlarmRate_pct"].mean()
+    _active_model_cache = mean_far.idxmin()
+    return _active_model_cache
+
+
+def get_active_bundle() -> Optional[dict]:
+    model_name = _pick_active_model()
+    bundles = list_finished_bundles()
+    if model_name is None or model_name not in bundles:
+        return None
+    return load_bundle(bundles[model_name])
+
+
+def predict_for_dashboard(bundle: dict, df: pd.DataFrame) -> pd.Series:
+    """predict(), but through the same prep AND quality filter real
+    inference goes through (prepare_for_inference + quality_filtered:
+    WV_bin==1, clean braking only). This matters, not just for consistency
+    with compute_far_by_wagon_type(): most individual rows are one of a
+    phase's 2-3 candidate BC/WV pairings that didn't turn out to be the
+    real one (a structural artifact of how Stage 2 emits one row per
+    candidate pairing, not a data-quality problem) -- scoring those with
+    the model anyway produces a technically-computable but out-of-regime
+    prediction. Rows outside the regime, or missing a required feature,
+    score as NaN (not dropped, so the caller can still align by index) --
+    dashboard event lists intentionally show every event, not just the
+    clean-regime subset, with NaN reading as "not applicable" there."""
+    prepared = quality_filtered(prepare_for_inference(df))
+    result = pd.Series(np.nan, index=df.index)
+    scorable = prepared.dropna(subset=bundle["features"])
+    if scorable.empty:
+        return result
+    preds = bundle["pipeline"].predict(scorable[bundle["features"]])
+    result.loc[scorable.index] = preds
+    return result
+
+
+def model_diagnostics() -> Optional[dict]:
+    model_name = _pick_active_model()
+    bundles = list_finished_bundles()
+    if model_name is None or model_name not in bundles:
+        return None
+    bundle_path = bundles[model_name]
+
+    meta_path = bundle_path.with_name(bundle_path.name.replace("_inference.joblib", "_meta.json"))
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+
+    return {
+        "bundle_path": str(bundle_path),
+        "model_name": model_name,
+        "features": meta.get("features") or load_bundle(bundle_path).get("features"),
+        "far_by_wagon_type": compute_far_by_wagon_type(),
+    }

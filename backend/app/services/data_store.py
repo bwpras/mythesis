@@ -14,7 +14,11 @@ from ..config import get_paths
 
 _CSV_PATTERN = re.compile(r"TestBrakefinal_data_raw_(Dati\d+)\.csv$")
 
-# Columns shown in the event list view (not the full 111-column detail row).
+# Columns shown in the event list view (not the full ~115-column detail
+# row). Not every kit CSV has every column here -- e.g. PhaseIdx/RunFile/
+# RunFolder only exist in CSVs this port generated itself, not the real
+# ones copied in from the finished thesis -- so list_events() filters this
+# down to whatever's actually present rather than assuming all of it is.
 EVENT_LIST_COLUMNS = [
     "event_id", "PhaseIdx", "MBP_ID", "BC_ID", "WV_ID",
     "Start_brake_time_pipe", "End_brake_time_pipe",
@@ -77,7 +81,8 @@ def list_events(kit_id: str, offset: int = 0, limit: int = 50,
         df = df.assign(predicted_leakage=predictions)
     df = df.sort_values("Start_brake_time_pipe", na_position="last")
     total = len(df)
-    columns = EVENT_LIST_COLUMNS + (["predicted_leakage"] if predictions is not None else [])
+    wanted = EVENT_LIST_COLUMNS + (["predicted_leakage"] if predictions is not None else [])
+    columns = [c for c in wanted if c in df.columns]
     page = df.iloc[offset: offset + limit][columns]
     return {
         "total": total,

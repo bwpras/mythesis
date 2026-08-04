@@ -39,7 +39,17 @@ export async function getEvent(kitId, eventId) {
   return data
 }
 
-export async function getModelInfo(kitId) {
-  const { data } = await api.get(`/kits/${kitId}/model`)
+export async function getModelInfo() {
+  const { data } = await api.get('/model')
+  return data
+}
+
+export async function getFleetDiagnostics() {
+  const { data } = await api.get('/diagnostics')
+  return data
+}
+
+export async function getKitDiagnostics(kitId) {
+  const { data } = await api.get(`/diagnostics/${kitId}`)
   return data
 }

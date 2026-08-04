@@ -56,7 +56,7 @@ KEEP_FIELDS = [
     "Start_brake_speed", "End_brake_speed", "Speed_difference", "Speed_gradient",
     "Consecutive_braking_pipe", "BC_BadStart", "BC_NormalBraking", "BC_LowBraking",
     "BC_StartAboveThresh", "BC_FlatStartNearZero", "BC_AlreadyEngagedStart", "BC_ReleasingAtStart",
-    "Total_power_efficiency", "Total_EN_eff", "Power_ratio", "Energy_ratio",
+    "Total_power_efficiency", "Power_ratio", "Energy_ratio",
     "Total_power_pipe", "Total_power_cyl", "EmergencyBrake_action",
     "Brake_power_delay", "Release_power_delay", "Total_power_delay",
     "Buildup_end_pressure_delay", "Release_start_pressure_delay",
@@ -67,6 +67,9 @@ KEEP_FIELDS = [
     "SV_Error", "UB_Error", "UR_Error", "DS_Error",
     "MBP_Sensor_error", "BC_SensorError", "WV_SensorError",
     "GPS_SensorError", "Gateway_VB_Error", "Gateway_CB_Error",
+    "Mean_delay_exp", "Std_delay_exp", "Total_energy_delay", "Total_energy_efficiency",
+    "GPS_Long_last", "GPS_Lat_last", "GPS_Speed_mean", "GPS_Speed_RPM_mean",
+    "LeakageLabel",
 ]
 
 # These are 0/1 flags, but populated from a mix of Python `bool` (e.g.
@@ -142,6 +145,54 @@ def _nan_safe_sum(a, b) -> float:
     return (0.0 if a_nan else float(a)) + (0.0 if b_nan else float(b))
 
 
+def _nan_safe_diff(a, b) -> float:
+    """Plain `a - b`, NaN if either side is NaN/None -- port of the
+    Mean_delay_exp/Std_delay_exp/*_energy_delay pattern in the archived
+    Algorithm_ReadDataset.m (`S(i).Std_delay_exp = S(i).Std_cyl - S(i).Std_pipe`,
+    no zero/NaN guarding beyond MATLAB's own NaN-propagates-through-arithmetic
+    behavior)."""
+    if _is_nan(a) or _is_nan(b):
+        return float("nan")
+    return float(a) - float(b)
+
+
+# GPS module's own placeholder for "no valid fix" -- confirmed with the
+# thesis author, not a real reading. Algorithm_ReadDataset.m only masked
+# this out of GPS_Speed_RPM before its (unexported) Butterworth-filtered
+# diagnostic; empirically the real exported GPS_*_last/_mean columns are
+# NaN wherever this constant appears in any of the four raw GPS arrays, so
+# it's masked out of all of them here, not just GPS_Speed_RPM.
+_GPS_BAD_CONST = 53.4641
+_GPS_BAD_CONST_TOL = 1e-4
+
+
+def _mask_gps_bad_const(arr: np.ndarray) -> np.ndarray:
+    return np.where(np.abs(arr - _GPS_BAD_CONST) < _GPS_BAD_CONST_TOL, np.nan, arr)
+
+
+def _last_valid(arr) -> float:
+    """Port of `idx = find(~isnan(v),1,'last'); if ~isempty(idx), out=v(idx); end`
+    (else stays NaN) -- used for GPS_Long_last/GPS_Lat_last."""
+    if arr is None or len(arr) == 0:
+        return float("nan")
+    arr = _mask_gps_bad_const(np.asarray(arr, dtype=np.float64))
+    valid = np.flatnonzero(~np.isnan(arr))
+    return float(arr[valid[-1]]) if valid.size else float("nan")
+
+
+def _nanmean_or_nan(arr) -> float:
+    """Port of MATLAB's `mean(v,'omitnan')`, which returns NaN (not a
+    warning-worthy error) for empty or all-NaN input -- used for
+    GPS_Speed_mean/GPS_Speed_RPM_mean. Filters to finite values first
+    instead of calling np.nanmean() directly to avoid its RuntimeWarning
+    on an all-NaN slice."""
+    if arr is None or len(arr) == 0:
+        return float("nan")
+    arr = _mask_gps_bad_const(np.asarray(arr, dtype=np.float64))
+    valid = arr[~np.isnan(arr)]
+    return float(valid.mean()) if valid.size else float("nan")
+
+
 def compute_derived_fields(test_brake_sets: list) -> list:
     """Adds error flags, efficiency ratios, and delay fields to every
     phase dict in `test_brake_sets`, in place. Returns the same list."""
@@ -210,7 +261,43 @@ def compute_derived_fields(test_brake_sets: list) -> list:
             phase["Brake_energy_eff"] = bee
             ree = _safe_ratio(phase.get("Release_energy_cyl"), phase.get("Release_energy_pipe"))
             phase["Release_energy_eff"] = ree
-            phase["Total_EN_eff"] = _nan_safe_sum(bee, ree)
+            phase["Total_energy_efficiency"] = _nan_safe_sum(bee, ree)
+
+            # ---- BC-vs-MBP "delay" fields (port of Algorithm_ReadDataset.m
+            # section 1: Mean_delay_exp/Std_delay_exp/Total_energy_delay).
+            # Mean_cyl/Std_cyl are already computed by bc_cyl_subphases.py
+            # but were never in KEEP_FIELDS -- these derived fields are the
+            # only reason they're needed here, so they stay local rather
+            # than becoming their own output columns (matching the archived
+            # source, which never exports Mean_cyl/Std_cyl/Brake_energy_delay/
+            # Release_energy_delay as final table columns either). ----
+            phase["Mean_delay_exp"] = _nan_safe_diff(phase.get("Mean_cyl"), phase.get("Mean_pipe"))
+            phase["Std_delay_exp"] = _nan_safe_diff(phase.get("Std_cyl"), phase.get("Std_pipe"))
+            brake_energy_delay = _nan_safe_diff(phase.get("Brake_energy_cyl"), phase.get("Brake_energy_pipe"))
+            release_energy_delay = _nan_safe_diff(phase.get("Release_energy_cyl"), phase.get("Release_energy_pipe"))
+            phase["Total_energy_delay"] = (
+                float("nan") if (_is_nan(brake_energy_delay) or _is_nan(release_energy_delay))
+                else brake_energy_delay + release_energy_delay
+            )
+
+            # ---- GPS array -> scalar reduction (port of Algorithm_ReadDataset.m's
+            # "Reduce GPS array fields to scalars": last non-NaN for position,
+            # mean for speed -- computed from the raw GPS_Long/GPS_Lat/GPS_Speed/
+            # GPS_Speed_RPM arrays braking_detection.py already attaches per
+            # phase, unfiltered, matching the archived source exactly (its
+            # separate Butterworth-filtered copies feed only a diagnostic
+            # DB_Error flag that was never an exported column either). ----
+            phase["GPS_Long_last"] = _last_valid(phase.get("GPS_Long"))
+            phase["GPS_Lat_last"] = _last_valid(phase.get("GPS_Lat"))
+            phase["GPS_Speed_mean"] = _nanmean_or_nan(phase.get("GPS_Speed"))
+            phase["GPS_Speed_RPM_mean"] = _nanmean_or_nan(phase.get("GPS_Speed_RPM"))
+
+            # ---- Placeholder, not a real label: Algorithm_ReadDataset.m sets
+            # this to "Healthy" unconditionally for every row of field data,
+            # since field data has no ground truth. Kept for schema parity;
+            # inference code must strip it before scoring (the archived
+            # source's own downstream notebook does exactly this). ----
+            phase["LeakageLabel"] = "Healthy"
 
             # ---- power/energy ratios (pre-guard: 0 denominator -> NaN, then natural divide) ----
             power_mbp = phase.get("Total_power_pipe")

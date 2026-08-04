@@ -2,52 +2,79 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { listKits } from '../api/client'
 
+const wagonBadgeClass = {
+  T3000: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300',
+  '4909': 'bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-300',
+  '4575': 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+}
+
+function WagonBadge({ type }) {
+  const cls = wagonBadgeClass[type] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {type}
+    </span>
+  )
+}
+
 export default function OverviewPage() {
   const { data: kits, isLoading, isError, error } = useQuery({
     queryKey: ['kits'],
     queryFn: listKits,
   })
 
-  if (isLoading) return <p>Loading kits...</p>
-  if (isError) return <p style={{ color: 'crimson' }}>{String(error)}</p>
+  if (isLoading) return <p className="text-slate-500 dark:text-slate-400">Loading kits...</p>
+  if (isError) return <p className="text-rose-600 dark:text-rose-400">{String(error)}</p>
 
   return (
     <div>
-      <h1>Fleet overview</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Fleet overview</h1>
       {kits.length === 0 && (
-        <p>
-          No processed kits yet. Go to <Link to="/jobs">Jobs</Link> to run the pipeline
-          for a kit first.
+        <p className="mt-4 text-slate-500 dark:text-slate-400">
+          No processed kits yet. Go to <Link to="/jobs" className="text-sky-600 hover:underline dark:text-sky-400">Jobs</Link> to
+          run the pipeline for a kit first.
         </p>
       )}
-      <table className="kit-table">
-        <thead>
-          <tr>
-            <th>Kit</th>
-            <th>Events</th>
-            <th>Date range</th>
-            <th>Non-standard braking</th>
-            <th>Sensor errors</th>
-            <th>Predicted leakage</th>
-          </tr>
-        </thead>
-        <tbody>
-          {kits.map((k) => (
-            <tr key={k.kit_id}>
-              <td><Link to={`/kits/${k.kit_id}`}>{k.kit_id}</Link></td>
-              <td>{k.event_count}</td>
-              <td>{k.date_range[0]?.slice(0, 10)} → {k.date_range[1]?.slice(0, 10)}</td>
-              <td>{k.non_standard_count} ({((k.non_standard_count / k.event_count) * 100).toFixed(0)}%)</td>
-              <td>{k.sensor_error_count}</td>
-              <td>
-                {k.predicted_leakage_count === null
-                  ? 'no model yet'
-                  : `${k.predicted_leakage_count} (${((k.predicted_leakage_count / k.event_count) * 100).toFixed(0)}%)`}
-              </td>
+      <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <tr>
+              <th className="px-4 py-3 font-medium">Kit</th>
+              <th className="px-4 py-3 font-medium">Wagon type</th>
+              <th className="px-4 py-3 font-medium">Events</th>
+              <th className="px-4 py-3 font-medium">Date range</th>
+              <th className="px-4 py-3 font-medium">Non-standard braking</th>
+              <th className="px-4 py-3 font-medium">Sensor errors</th>
+              <th className="px-4 py-3 font-medium">Predicted leakage</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+            {kits.map((k) => (
+              <tr key={k.kit_id} className="bg-white hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900">
+                <td className="px-4 py-3 font-medium">
+                  <Link to={`/kits/${k.kit_id}`} className="text-sky-600 hover:underline dark:text-sky-400">
+                    {k.kit_id}
+                  </Link>
+                </td>
+                <td className="px-4 py-3"><WagonBadge type={k.wagon_type} /></td>
+                <td className="px-4 py-3">{k.event_count}</td>
+                <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                  {k.date_range[0]?.slice(0, 11)} → {k.date_range[1]?.slice(0, 11)}
+                </td>
+                <td className="px-4 py-3">
+                  {k.non_standard_count} ({((k.non_standard_count / k.event_count) * 100).toFixed(0)}%)
+                </td>
+                <td className="px-4 py-3">{k.sensor_error_count}</td>
+                <td className="px-4 py-3">
+                  {k.predicted_leakage_count === null
+                    ? <span className="text-slate-400">no model yet</span>
+                    : `${k.predicted_leakage_count} (${((k.predicted_leakage_count / k.event_count) * 100).toFixed(0)}%)`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

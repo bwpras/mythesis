@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import jobs, kits
+from .routers import diagnostics, jobs, kits
 
 app = FastAPI(title="Railway Braking Dashboard API")
 
@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(jobs.router)
 app.include_router(kits.router)
+app.include_router(diagnostics.router)
 
 
 @app.get("/api/health")
