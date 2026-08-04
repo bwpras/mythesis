@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 
+from .filename_pattern import parse_bin_filename as _parse_bin_filename
 from .identify_brake_sensors import identify_brake_sensors, sort_by_label
 from .packet_io import fread, fread1
 from .read_pjm_file import read_pjm_file39
@@ -39,27 +40,9 @@ from .read_pjm_file import read_pjm_file39
 MSG_WAKE = 0x20
 WHEEL_DIAM_M = 0.92
 
-_FNAME_RE = re.compile(
-    r"^(?P<YYYY>\d{4})_(?P<MMDD>\d{4})(?P<HH>\d{2})(?P<MN>\d{2})(?P<SS>\d{2}).*?_(?P<kind>pjm|p)\.bin$"
-)
-_KITID_RE = re.compile(r"_(0x[0-9a-fA-F]+)_")
-
 
 def _posix_ms_to_dt64(raw_ms) -> np.datetime64:
     return np.datetime64(int(raw_ms), "ms").astype("datetime64[us]")
-
-
-def _parse_bin_filename(name: str):
-    m = _FNAME_RE.match(name)
-    if not m:
-        return None
-    g = m.groupdict()
-    end_time = np.datetime64(
-        f"{g['YYYY']}-{g['MMDD'][:2]}-{g['MMDD'][2:]}T{g['HH']}:{g['MN']}:{g['SS']}"
-    )
-    kit_m = _KITID_RE.search(name)
-    kit_id = kit_m.group(1) if kit_m else ""
-    return end_time, g["kind"], kit_id
 
 
 class _KeyStore:
@@ -195,6 +178,93 @@ def _parse_pressure_file(path: Path, end_time, kit_id: str, fsamp: float, store:
     if key in store:
         store[key].cont_pkt = cont_pkt
         store[key].msg_wake_count = cont_msg_wake
+
+
+def _assemble_sensor_chunk(key: str, entry: "_KeyStore") -> dict:
+    """The Nx80-flatten -> NaT-mask -> telemetry-length-reconcile -> pCal ->
+    +2h-offset assembly, extracted from what used to be inlined at the
+    bottom of load_nodo_data() so it can be reused for one file's worth of
+    freshly-parsed packets at a time (see ingestion/live_ingest.py), not
+    just a whole day's accumulated store. Returns one Nodo-shaped per-sensor
+    dict (ID, Start_time, Time, Pressure, Vbatt, Vin, Id, Ic, Temperature,
+    RSSI, Sensor_Type, Wagon_Type, Label) -- WITHOUT the GPS fields, which
+    are shared across every sensor in a Nodo and assembled separately by
+    _assemble_gps_chunk(); load_nodo_data() below spreads that shared dict
+    onto each sensor's chunk itself, unchanged from before this refactor."""
+    tmat = np.stack(entry.time_chunks, axis=0) if entry.time_chunks else np.zeros((0, 80), dtype="datetime64[us]")
+    pcol = np.concatenate(entry.press_chunks) if entry.press_chunks else np.array([], dtype=np.int16)
+    tcol = tmat.ravel(order="C")
+
+    length = min(len(tcol), len(pcol))
+    tcol, pcol = tcol[:length], pcol[:length]
+
+    mask = ~np.isnat(tcol)
+    n_total, n_keep = length, int(mask.sum())
+    n_removed = n_total - n_keep
+    if n_removed > 0:
+        print(f"[NaT-mask] {key}: removed {n_removed}/{n_total} "
+              f"({100 * n_removed / max(1, n_total):.2f}%) NaT-padded samples")
+
+    time_col = tcol[mask]
+    press_col = pcol[mask]
+
+    n_pkt = len(entry.start_time)
+    reconciled = {}
+    for attr in ("vbatt", "vin", "id_", "ic", "temp", "rssi"):
+        v = getattr(entry, attr)
+        nv = len(v)
+        if nv > n_pkt:
+            v = v[:n_pkt]
+        elif nv < n_pkt:
+            v = v + [np.nan] * (n_pkt - nv)
+        reconciled[attr] = v
+
+    p_cal = ((press_col.astype(np.float64) * 3.6 / 3.3) * 0.000788) - 2.3057
+    st = np.array(entry.start_time, dtype="datetime64[us]") if entry.start_time else \
+        np.array([], dtype="datetime64[us]")
+    offset = np.timedelta64(2, "h")
+
+    return {
+        "ID": key,
+        "Start_time": st + offset,
+        "Time": time_col + offset,
+        "Pressure": p_cal,
+        "Vbatt": np.array(reconciled["vbatt"], dtype=float),
+        "Vin": np.array(reconciled["vin"], dtype=float),
+        "Id": np.array(reconciled["id_"], dtype=float),
+        "Ic": np.array(reconciled["ic"], dtype=float),
+        "Temperature": np.array(reconciled["temp"], dtype=float),
+        "RSSI": np.array(reconciled["rssi"], dtype=float),
+        "Sensor_Type": None,
+        "Wagon_Type": None,
+        "Label": None,
+    }
+
+
+def _assemble_gps_chunk(gps_lat, gps_lon, speed, rpm, ibatt, vbatt, timestamp) -> dict:
+    """The `valid = gps_lat != 0` filter + speed_rpm calculation, extracted
+    from what used to be inlined in load_nodo_data()'s GPS block so it can
+    be applied to one newly-arrived _pjm.bin file's arrays at a time (see
+    ingestion/live_ingest.py) exactly as readily as to the concatenated
+    whole-day arrays load_nodo_data() below still builds. Filtering is
+    elementwise, so filtering-then-concatenating-across-files (streaming)
+    and concatenating-then-filtering-once (batch, unchanged here) are
+    equivalent."""
+    gps_lat = np.asarray(gps_lat, dtype=float)
+    valid = gps_lat != 0
+    rpm = np.asarray(rpm, dtype=float)
+    gps_dat = {
+        "GPS_lat": gps_lat[valid],
+        "GPS_lon": np.asarray(gps_lon, dtype=float)[valid],
+        "speed": np.asarray(speed, dtype=float)[valid],
+        "Time_GPS": np.asarray(timestamp, dtype="datetime64[us]")[valid] if len(timestamp)
+        else np.array([], dtype="datetime64[us]"),
+        "rpm": rpm[valid],
+        "Ibatt": np.asarray(ibatt, dtype=float)[valid],
+        "Vbatt": np.asarray(vbatt, dtype=float)[valid],
+    }
+    gps_dat["speed_rpm"] = gps_dat["rpm"] * ((1 / 60) * 2 * np.pi * (WHEEL_DIAM_M / 2) * 3.6)
+    return gps_dat
 
 
 def _define_folder_key(root_dir: Path) -> str:
@@ -356,25 +426,12 @@ def load_nodo_data(
                        np.array([], dtype="datetime64[us]"))
 
     if gps_lat_l:
-        gps_lat = np.concatenate(gps_lat_l) if gps_lat_l else np.array([])
-        gps_lon = np.concatenate(gps_lon_l)
-        speed = np.concatenate(speed_l)
-        rpm = np.concatenate(rpm_l)
-        ibatt = np.concatenate(ibatt_l)
-        vbatt_gps = np.concatenate(vbatt_l)
-        time_gps = np.concatenate(time_l) if time_l else np.array([], dtype="datetime64[us]")
-
-        valid = gps_lat != 0
-        gps_dat = {
-            "GPS_lat": gps_lat[valid],
-            "GPS_lon": gps_lon[valid],
-            "speed": speed[valid],
-            "Time_GPS": time_gps[valid],
-            "rpm": rpm[valid],
-            "Ibatt": ibatt[valid],
-            "Vbatt": vbatt_gps[valid],
-        }
-        gps_dat["speed_rpm"] = gps_dat["rpm"] * ((1 / 60) * 2 * np.pi * (WHEEL_DIAM_M / 2) * 3.6)
+        gps_dat = _assemble_gps_chunk(
+            gps_lat=np.concatenate(gps_lat_l), gps_lon=np.concatenate(gps_lon_l),
+            speed=np.concatenate(speed_l), rpm=np.concatenate(rpm_l),
+            ibatt=np.concatenate(ibatt_l), vbatt=np.concatenate(vbatt_l),
+            timestamp=np.concatenate(time_l) if time_l else np.array([], dtype="datetime64[us]"),
+        )
     else:
         gps_dat = {
             "GPS_lat": np.array([]), "GPS_lon": np.array([]), "speed": np.array([]),
@@ -382,66 +439,11 @@ def load_nodo_data(
             "Ibatt": np.array([]), "Vbatt": np.array([]), "speed_rpm": np.array([]),
         }
 
-    # --------- Canonicalize time to column vectors (flatten Nx80 -> (N*80,)) ---------
-    press_flat: Dict[str, np.ndarray] = {}
-    time_flat: Dict[str, np.ndarray] = {}
-    for key in kk:
-        entry = store[key]
-        tmat = np.stack(entry.time_chunks, axis=0) if entry.time_chunks else np.zeros((0, 80), dtype="datetime64[us]")
-        pcol = np.concatenate(entry.press_chunks) if entry.press_chunks else np.array([], dtype=np.int16)
-        tcol = tmat.ravel(order="C")
-
-        length = min(len(tcol), len(pcol))
-        tcol, pcol = tcol[:length], pcol[:length]
-
-        mask = ~np.isnat(tcol)
-        n_total, n_keep = length, int(mask.sum())
-        n_removed = n_total - n_keep
-        if n_removed > 0:
-            print(f"[NaT-mask] {key}: removed {n_removed}/{n_total} "
-                  f"({100 * n_removed / max(1, n_total):.2f}%) NaT-padded samples")
-
-        time_flat[key] = tcol[mask]
-        press_flat[key] = pcol[mask]
-
-    # --------- Reconcile per-packet telemetry lengths to Start_time length ---------
-    for key in kk:
-        entry = store[key]
-        n_pkt = len(entry.start_time)
-        for attr in ("vbatt", "vin", "id_", "ic", "temp", "rssi"):
-            v = getattr(entry, attr)
-            nv = len(v)
-            if nv > n_pkt:
-                setattr(entry, attr, v[:n_pkt])
-            elif nv < n_pkt:
-                setattr(entry, attr, v + [np.nan] * (n_pkt - nv))
-
-    # --------- Assemble Nodo struct (apply pCal and +2h offset) ---------
-    offset = np.timedelta64(2, "h")
+    # --------- Assemble Nodo struct (flatten, calibrate, offset, attach shared GPS) ---------
     nodo: List[dict] = []
     for key in kk:
-        entry = store[key]
-        raw_press = press_flat.get(key, np.array([], dtype=np.int16))
-        p_cal = ((raw_press.astype(np.float64) * 3.6 / 3.3) * 0.000788) - 2.3057
-
-        st = np.array(entry.start_time, dtype="datetime64[us]") if entry.start_time else \
-            np.array([], dtype="datetime64[us]")
-        tcol = time_flat.get(key, np.array([], dtype="datetime64[us]"))
-
-        nodo.append({
-            "ID": key,
-            "Start_time": st + offset,
-            "Time": tcol + offset,
-            "Pressure": p_cal,
-            "Vbatt": np.array(entry.vbatt, dtype=float),
-            "Vin": np.array(entry.vin, dtype=float),
-            "Id": np.array(entry.id_, dtype=float),
-            "Ic": np.array(entry.ic, dtype=float),
-            "Temperature": np.array(entry.temp, dtype=float),
-            "RSSI": np.array(entry.rssi, dtype=float),
-            "Sensor_Type": None,
-            "Wagon_Type": None,
-            "Label": None,
+        sensor = _assemble_sensor_chunk(key, store[key])
+        sensor.update({
             "Time_GPS": gps_dat["Time_GPS"],
             "Long": gps_dat["GPS_lon"],
             "Lat": gps_dat["GPS_lat"],
@@ -451,6 +453,7 @@ def load_nodo_data(
             "GPS_Vbatt": gps_dat["Vbatt"],
             "RPM_axle": gps_dat["rpm"],
         })
+        nodo.append(sensor)
 
     # ========= Sensor role cache: load-or-classify-and-save =========
     folder_key = _define_folder_key(root_dir)

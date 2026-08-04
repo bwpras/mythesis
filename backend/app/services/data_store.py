@@ -32,6 +32,10 @@ def _kit_csv_path(kit_id: str) -> Path:
     return get_paths().processed / f"TestBrakefinal_data_raw_{kit_id}.csv"
 
 
+def _live_kit_csv_path(kit_id: str) -> Path:
+    return get_paths().live / f"{kit_id}_live.csv"
+
+
 def valid_gps_fix(df: pd.DataFrame) -> pd.DataFrame:
     """Rows with a real GPS_Lat_last/GPS_Long_last fix. Excludes NaN *and*
     near-(0,0) -- a classic GPS-cold-start/no-fix sentinel value, not an
@@ -64,6 +68,17 @@ def load_kit_table(kit_id: str) -> pd.DataFrame:
     path = _kit_csv_path(kit_id)
     if not path.is_file():
         raise FileNotFoundError(f"No processed data for kit '{kit_id}' at {path}")
+    df = pd.read_csv(path, dtype={"MBP_ID": str, "BC_ID": str, "WV_ID": str})
+    df.insert(0, "event_id", df.index)
+    return df
+
+
+def load_live_kit_table(kit_id: str) -> pd.DataFrame:
+    """Same contract as load_kit_table(): fresh read every call, no cache --
+    a running live watcher rewrites this file as new cycles complete."""
+    path = _live_kit_csv_path(kit_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"No live data for kit '{kit_id}' at {path}")
     df = pd.read_csv(path, dtype={"MBP_ID": str, "BC_ID": str, "WV_ID": str})
     df.insert(0, "event_id", df.index)
     return df

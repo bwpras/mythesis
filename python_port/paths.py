@@ -22,6 +22,9 @@ class PortPaths:
     models: Path
     reports: Path
     logs: Path
+    live: Path  # data/processed/live/ -- live-watcher CSV output, kept separate
+    # from the batch training corpus in `processed`; see csv_export.py's
+    # _live_output_path() docstring.
 
 
 def get_paths() -> PortPaths:
@@ -39,4 +42,5 @@ def get_paths() -> PortPaths:
         models=outputs / "models",
         reports=outputs / "reports",
         logs=outputs / "logs",
+        live=data / "processed" / "live",
     )

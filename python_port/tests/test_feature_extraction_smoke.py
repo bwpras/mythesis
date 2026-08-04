@@ -57,6 +57,7 @@ def _isolated_paths(tmp_dir: Path):
         processed=tmp_dir / "processed", external=tmp_dir / "external",
         features=tmp_dir / "features", figures=tmp_dir / "figures",
         models=tmp_dir / "models", reports=tmp_dir / "reports", logs=tmp_dir / "logs",
+        live=tmp_dir / "processed" / "live",
     )
     return mock.patch("python_port.paths.get_paths", return_value=fake)
 

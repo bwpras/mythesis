@@ -30,23 +30,11 @@ import numpy as np
 
 if __package__:
     from .load_nodo_data import load_nodo_data
+    from .filename_pattern import file_end_time as _file_end_time
 else:  # allow `python batch_process.py ...` as well as `-m python_port.ingestion.batch_process`
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from python_port.ingestion.load_nodo_data import load_nodo_data
-
-_FNAME_RE = re.compile(
-    r"^(?P<YYYY>\d{4})_(?P<MMDD>\d{4})(?P<HH>\d{2})(?P<MN>\d{2})(?P<SS>\d{2}).*?_(?P<kind>pjm|p)\.bin$"
-)
-
-
-def _file_end_time(name: str) -> Optional[np.datetime64]:
-    m = _FNAME_RE.match(name)
-    if not m:
-        return None
-    g = m.groupdict()
-    return np.datetime64(
-        f"{g['YYYY']}-{g['MMDD'][:2]}-{g['MMDD'][2:]}T{g['HH']}:{g['MN']}:{g['SS']}"
-    )
+    from python_port.ingestion.filename_pattern import file_end_time as _file_end_time
 
 
 def _dataset_tag(root_dir: Path) -> str:

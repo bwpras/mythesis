@@ -5,6 +5,7 @@ import EventDetailPage from './pages/EventDetailPage.jsx'
 import ModelPage from './pages/ModelPage.jsx'
 import JobsPage from './pages/JobsPage.jsx'
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx'
+import LivePage from './pages/LivePage.jsx'
 
 const navLinkClass = ({ isActive }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -23,6 +24,7 @@ function App() {
         <NavLink to="/" end className={navLinkClass}>Overview</NavLink>
         <NavLink to="/diagnostics" className={navLinkClass}>Diagnostics</NavLink>
         <NavLink to="/jobs" className={navLinkClass}>Jobs</NavLink>
+        <NavLink to="/live" className={navLinkClass}>Live</NavLink>
       </nav>
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Routes>
@@ -32,6 +34,7 @@ function App() {
           <Route path="/kits/:kitId/events/:eventId" element={<EventDetailPage />} />
           <Route path="/kits/:kitId/model" element={<ModelPage />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/live" element={<LivePage />} />
         </Routes>
       </main>
     </div>

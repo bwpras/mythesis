@@ -58,3 +58,28 @@ export async function getKitLocations(kitId) {
   const { data } = await api.get(`/kits/${kitId}/locations`)
   return data
 }
+
+export async function startLiveWatcher(kitId, watchDir, pollIntervalS = 1.0) {
+  const { data } = await api.post(`/live/${kitId}/start`, { watch_dir: watchDir, poll_interval_s: pollIntervalS })
+  return data
+}
+
+export async function stopLiveWatcher(kitId) {
+  const { data } = await api.post(`/live/${kitId}/stop`)
+  return data
+}
+
+export async function getLiveStatus(kitId) {
+  const { data } = await api.get(`/live/${kitId}/status`)
+  return data
+}
+
+export async function getLiveEvents(kitId, { limit = 50 } = {}) {
+  const { data } = await api.get(`/live/${kitId}/events`, { params: { limit } })
+  return data
+}
+
+export async function listActiveWatchers() {
+  const { data } = await api.get('/live')
+  return data
+}

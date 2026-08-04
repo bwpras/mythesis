@@ -20,6 +20,7 @@ class AppPaths:
     outputs: Path
     models: Path
     dashboard_store: Path
+    live: Path  # data/processed/live/ -- mirrors python_port/paths.py::PortPaths.live
 
 
 def get_paths() -> AppPaths:
@@ -35,4 +36,5 @@ def get_paths() -> AppPaths:
         outputs=outputs,
         models=outputs / "models",
         dashboard_store=outputs / "dashboard_store",
+        live=data / "processed" / "live",
     )

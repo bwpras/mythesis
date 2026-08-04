@@ -53,6 +53,20 @@ def _output_path(dataset_key: str) -> Path:
     return get_paths().processed / f"TestBrakefinal_data_raw_{dataset_key}.csv"
 
 
+def _live_output_path(dataset_key: str) -> Path:
+    """Deliberately a SEPARATE file/folder from _output_path(), not the same
+    TestBrakefinal_data_raw_<DatiXX>.csv the batch corpus writes to -- mixing
+    demo-replay-generated rows into the file the thesis's validated training
+    data lives in risks silent contamination if anything later globs
+    data/processed/*.csv. A visibly separate data/processed/live/ folder
+    makes the distinction structural, not just a naming convention."""
+    if __package__:
+        from ..paths import get_paths
+    else:
+        from python_port.paths import get_paths
+    return get_paths().live / f"{dataset_key}_live.csv"
+
+
 def _coerce_datetimes(df: pd.DataFrame) -> pd.DataFrame:
     for col in _DATETIME_COLUMNS:
         if col in df.columns:
@@ -98,16 +112,10 @@ def _composite_key(df: pd.DataFrame) -> pd.Series:
     return key
 
 
-def export_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: bool = True) -> Path:
-    """Merges `table` (one run's output from `postprocessing.build_feature_table`)
-    into `data/processed/TestBrakefinal_data_raw_<dataset_key>.csv`,
-    deduplicating by (MBP_ID, BC_ID, WV_ID, Start_brake_time_pipe,
-    End_brake_time_pipe) -- new rows win on a key collision by default,
-    matching `update_brake_master.m`'s `PreferNew=true` default. Returns
-    the path written. Raises on I/O failure (see module docstring for why
-    this isn't best-effort like the registry caches)."""
-    out_path = _output_path(dataset_key)
-
+def _merge_and_write(table: pd.DataFrame, out_path: Path, prefer_new: bool) -> Path:
+    """Shared merge/dedupe/write body for export_feature_csv() and
+    export_live_feature_csv() -- same composite-key logic either way, only
+    the destination path differs."""
     new_table = _coerce_datetimes(table.copy())
 
     if out_path.is_file():
@@ -142,3 +150,24 @@ def export_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: boo
     combined.to_csv(tmp, index=False)
     tmp.replace(out_path)
     return out_path
+
+
+def export_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: bool = True) -> Path:
+    """Merges `table` (one run's output from `postprocessing.build_feature_table`)
+    into `data/processed/TestBrakefinal_data_raw_<dataset_key>.csv`,
+    deduplicating by (MBP_ID, BC_ID, WV_ID, Start_brake_time_pipe,
+    End_brake_time_pipe) -- new rows win on a key collision by default,
+    matching `update_brake_master.m`'s `PreferNew=true` default. Returns
+    the path written. Raises on I/O failure (see module docstring for why
+    this isn't best-effort like the registry caches)."""
+    return _merge_and_write(table, _output_path(dataset_key), prefer_new)
+
+
+def export_live_feature_csv(table: pd.DataFrame, dataset_key: str, *, prefer_new: bool = True) -> Path:
+    """Same composite-key merge/dedupe as export_feature_csv(), but writes
+    to data/processed/live/<dataset_key>_live.csv instead of the batch
+    corpus (see _live_output_path()'s docstring for why they're kept
+    separate). A restarted live watcher re-processing an already-exported
+    phase (e.g. after a crash-recovery re-feed) dedupes correctly here the
+    same way a re-run batch job already does."""
+    return _merge_and_write(table, _live_output_path(dataset_key), prefer_new)
