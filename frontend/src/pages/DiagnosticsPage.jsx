@@ -1,16 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
-import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getFleetDiagnostics } from '../api/client'
-
-const STATUS_COLOR = {
-  healthy: '#059669',   // emerald-600
-  warning: '#d97706',   // amber-600
-  critical: '#e11d48',  // rose-600
-  unknown: '#94a3b8',   // slate-400
-}
+import { TILE_URL, TILE_ATTRIBUTION, FALLBACK_CENTER, dotIcon } from '../components/mapUtils'
 
 const STATUS_BADGE = {
   healthy: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -25,16 +18,6 @@ function StatusBadge({ status }) {
       {status}
     </span>
   )
-}
-
-function markerIcon(status) {
-  const color = STATUS_COLOR[status] || STATUS_COLOR.unknown
-  return L.divIcon({
-    className: '',
-    html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,0.3)"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  })
 }
 
 // Worst of airbrake/GPS status decides marker color -- a kit with a
@@ -58,7 +41,7 @@ export default function DiagnosticsPage() {
   const located = kits.filter((k) => k.last_location)
   const center = located.length
     ? [located[0].last_location.lat, located[0].last_location.lon]
-    : [45.46, 9.19] // fallback: Northern Italy, this fleet's operating region
+    : FALLBACK_CENTER
 
   return (
     <div>
@@ -70,15 +53,12 @@ export default function DiagnosticsPage() {
 
       <div className="mt-6 h-96 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
         <MapContainer center={center} zoom={7} style={{ height: '100%', width: '100%' }}>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
           {located.map((k) => (
             <Marker
               key={k.kit_id}
               position={[k.last_location.lat, k.last_location.lon]}
-              icon={markerIcon(worstStatus(k))}
+              icon={dotIcon(worstStatus(k))}
             >
               <Popup>
                 <div className="text-sm">

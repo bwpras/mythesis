@@ -53,3 +53,8 @@ export async function getKitDiagnostics(kitId) {
   const { data } = await api.get(`/diagnostics/${kitId}`)
   return data
 }
+
+export async function getKitLocations(kitId) {
+  const { data } = await api.get(`/kits/${kitId}/locations`)
+  return data
+}

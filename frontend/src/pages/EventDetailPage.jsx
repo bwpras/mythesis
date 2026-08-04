@@ -1,6 +1,34 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 import { getEvent } from '../api/client'
+import { TILE_URL, TILE_ATTRIBUTION, dotIcon } from '../components/mapUtils'
+
+function EventMiniMap({ event }) {
+  const lat = event.GPS_Lat_last
+  const lon = event.GPS_Long_last
+  const hasFix = typeof lat === 'number' && typeof lon === 'number' && !Number.isNaN(lat) && !Number.isNaN(lon)
+
+  if (!hasFix) {
+    return (
+      <div className="flex h-48 w-64 flex-shrink-0 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+        <span className="text-2xl">📡</span>
+        <p className="mt-1 text-sm font-medium text-rose-600 dark:text-rose-400">GPS error</p>
+        <p className="text-xs text-slate-400">No fix for this event</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-48 w-64 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+      <MapContainer center={[lat, lon]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+        <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
+        <Marker position={[lat, lon]} icon={dotIcon('neutral', 14)} />
+      </MapContainer>
+    </div>
+  )
+}
 
 export default function EventDetailPage() {
   const { kitId, eventId } = useParams()
@@ -20,9 +48,12 @@ export default function EventDetailPage() {
           ← back to {kitId}
         </Link>
       </p>
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Event #{event.PhaseIdx ?? event.event_id} — {kitId}
-      </h1>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Event #{event.PhaseIdx ?? event.event_id} — {kitId}
+        </h1>
+        <EventMiniMap event={event} />
+      </div>
       <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800">

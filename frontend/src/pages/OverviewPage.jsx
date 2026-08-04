@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { listKits } from '../api/client'
+import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
+import { listKits, getFleetDiagnostics } from '../api/client'
+import { TILE_URL, TILE_ATTRIBUTION, FALLBACK_CENTER, dotIcon } from '../components/mapUtils'
 
 const wagonBadgeClass = {
   T3000: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300',
@@ -14,6 +17,32 @@ function WagonBadge({ type }) {
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {type}
     </span>
+  )
+}
+
+function OverviewMap() {
+  const { data: kits } = useQuery({
+    queryKey: ['fleet-diagnostics'],
+    queryFn: getFleetDiagnostics,
+  })
+
+  if (!kits) return null
+  const located = kits.filter((k) => k.last_location)
+  if (located.length === 0) return null
+
+  const center = [located[0].last_location.lat, located[0].last_location.lon]
+
+  return (
+    <div className="mt-6 h-72 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+      <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
+        <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
+        {located.map((k) => (
+          <Marker key={k.kit_id} position={[k.last_location.lat, k.last_location.lon]} icon={dotIcon('neutral')}>
+            <Tooltip direction="top" offset={[0, -8]}>{k.kit_id}</Tooltip>
+          </Marker>
+        ))}
+      </MapContainer>
+    </div>
   )
 }
 
@@ -35,6 +64,9 @@ export default function OverviewPage() {
           run the pipeline for a kit first.
         </p>
       )}
+
+      {kits.length > 0 && <OverviewMap />}
+
       <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">

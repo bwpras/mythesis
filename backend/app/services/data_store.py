@@ -100,3 +100,21 @@ def get_event(kit_id: str, event_id: int, predictions: "pd.Series | None" = None
     if row.empty:
         raise KeyError(f"No event {event_id} for kit {kit_id}")
     return row.iloc[0].to_dict()
+
+
+def list_locations(kit_id: str) -> list[dict]:
+    """Every distinct GPS fix this kit's events have -- for a "route
+    coverage" map, not a table, so it skips pagination. Deduped by
+    (lat, lon, time): GPS is committed once per phase in Stage 2, but each
+    phase emits one row per candidate BC/WV pairing (2-3 rows sharing the
+    exact same GPS fix) -- without deduping, the map would show 2-3
+    identical overlapping markers per real location."""
+    df = load_kit_table(kit_id)
+    if "GPS_Lat_last" not in df.columns or "GPS_Long_last" not in df.columns:
+        return []
+    has_fix = df.dropna(subset=["GPS_Lat_last", "GPS_Long_last"])
+    has_fix = has_fix.drop_duplicates(subset=["GPS_Lat_last", "GPS_Long_last", "Start_brake_time_pipe"])
+    out = has_fix[["event_id", "GPS_Lat_last", "GPS_Long_last", "Start_brake_time_pipe"]].rename(
+        columns={"GPS_Lat_last": "lat", "GPS_Long_last": "lon", "Start_brake_time_pipe": "time"}
+    )
+    return out.to_dict(orient="records")

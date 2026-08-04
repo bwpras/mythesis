@@ -78,3 +78,11 @@ def get_event(kit_id: str, event_id: int):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/{kit_id}/locations")
+def get_kit_locations(kit_id: str):
+    try:
+        return _clean(data_store.list_locations(kit_id))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
