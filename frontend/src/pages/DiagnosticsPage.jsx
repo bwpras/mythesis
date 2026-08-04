@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getFleetDiagnostics } from '../api/client'
 import { TILE_URL, TILE_ATTRIBUTION, FALLBACK_CENTER, dotIcon } from '../components/mapUtils'
+import OutOfScopeBadge from '../components/OutOfScopeBadge.jsx'
 
 const STATUS_BADGE = {
   healthy: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -99,9 +100,13 @@ export default function DiagnosticsPage() {
                 <td className="px-4 py-3"><StatusBadge status={k.airbrake_health.status} /></td>
                 <td className="px-4 py-3">{k.airbrake_health.sensor_error_pct}%</td>
                 <td className="px-4 py-3">
-                  {k.airbrake_health.predicted_leakage_pct === null
-                    ? <span className="text-slate-400">—</span>
-                    : `${k.airbrake_health.predicted_leakage_pct}%`}
+                  {k.airbrake_health.predicted_leakage_pct !== null ? (
+                    `${k.airbrake_health.predicted_leakage_pct}%`
+                  ) : k.airbrake_health.model_active ? (
+                    <OutOfScopeBadge title="No events for this kit fall within the model's validated regime (WV pressure, braking regularity, BC start) -- nothing to score." />
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3"><StatusBadge status={k.gps_health.status} /></td>
                 <td className="px-4 py-3">

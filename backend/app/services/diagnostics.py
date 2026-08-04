@@ -119,6 +119,12 @@ def kit_diagnostics(kit_id: str) -> dict:
             "non_standard_pct": non_standard_pct,
             "sensor_error_pct": sensor_error_pct,
             "predicted_leakage_pct": predicted_leakage_pct,
+            # A model being active but predicted_leakage_pct still None
+            # means every one of this kit's rows fell outside the model's
+            # trained regime (WV_bin/BC_BadStart/Non_Standard_Braking) --
+            # distinguishes that from "no model loaded at all" so the
+            # dashboard can show "out of scope" instead of a bare dash.
+            "model_active": bundle is not None,
         },
         "gps_health": {
             "status": gps_status,
