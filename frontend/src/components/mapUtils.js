@@ -12,11 +12,16 @@ export const STATUS_COLOR = {
   neutral: '#0284c7',   // sky-600 -- plain marker, no health status attached
 }
 
-export function dotIcon(status = 'neutral', size = 16) {
+// clickable=true adds a pointer cursor -- every marker in this app either
+// drills down to a kit or an event on click, or (EventDetailPage's single
+// marker) is already the deepest level, so it's opt-out per call site
+// rather than universal.
+export function dotIcon(status = 'neutral', size = 16, clickable = true) {
   const color = STATUS_COLOR[status] || STATUS_COLOR.neutral
+  const cursor = clickable ? 'cursor:pointer;' : ''
   return L.divIcon({
     className: '',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,0.3)"></div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,0.3);${cursor}"></div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })

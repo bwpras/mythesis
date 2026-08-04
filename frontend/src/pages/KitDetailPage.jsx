@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
@@ -10,6 +10,7 @@ import { TILE_URL, TILE_ATTRIBUTION, dotIcon } from '../components/mapUtils'
 const PAGE_SIZE = 25
 
 function KitMap({ kitId }) {
+  const navigate = useNavigate()
   const { data: locations, isLoading } = useQuery({
     queryKey: ['locations', kitId],
     queryFn: () => getKitLocations(kitId),
@@ -36,8 +37,15 @@ function KitMap({ kitId }) {
       >
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
         {locations.map((l) => (
-          <Marker key={l.event_id} position={[l.lat, l.lon]} icon={dotIcon('neutral', 10)}>
-            <Tooltip direction="top" offset={[0, -6]}>{l.time}</Tooltip>
+          <Marker
+            key={l.event_id}
+            position={[l.lat, l.lon]}
+            icon={dotIcon('neutral', 10)}
+            eventHandlers={{ click: () => navigate(`/kits/${kitId}/events/${l.event_id}`) }}
+          >
+            <Tooltip direction="top" offset={[0, -6]}>
+              {l.time} — click for event detail
+            </Tooltip>
           </Marker>
         ))}
       </MapContainer>

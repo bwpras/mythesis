@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { listKits, getFleetDiagnostics } from '../api/client'
@@ -21,6 +21,7 @@ function WagonBadge({ type }) {
 }
 
 function OverviewMap() {
+  const navigate = useNavigate()
   const { data: kits } = useQuery({
     queryKey: ['fleet-diagnostics'],
     queryFn: getFleetDiagnostics,
@@ -37,8 +38,13 @@ function OverviewMap() {
       <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
         {located.map((k) => (
-          <Marker key={k.kit_id} position={[k.last_location.lat, k.last_location.lon]} icon={dotIcon('neutral')}>
-            <Tooltip direction="top" offset={[0, -8]}>{k.kit_id}</Tooltip>
+          <Marker
+            key={k.kit_id}
+            position={[k.last_location.lat, k.last_location.lon]}
+            icon={dotIcon('neutral')}
+            eventHandlers={{ click: () => navigate(`/kits/${k.kit_id}`) }}
+          >
+            <Tooltip direction="top" offset={[0, -8]}>{k.kit_id} — click to open</Tooltip>
           </Marker>
         ))}
       </MapContainer>

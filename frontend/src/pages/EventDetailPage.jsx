@@ -24,7 +24,7 @@ function EventMiniMap({ event }) {
     <div className="h-48 w-64 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
       <MapContainer center={[lat, lon]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} />
-        <Marker position={[lat, lon]} icon={dotIcon('neutral', 14)} />
+        <Marker position={[lat, lon]} icon={dotIcon('neutral', 14, false)} />
       </MapContainer>
     </div>
   )
