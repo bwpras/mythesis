@@ -70,9 +70,20 @@ def run_ingest_and_extract(
 
         total_phases = 0
         csv_path = None
+        failed_days = []
         for i, pkl_path in enumerate(pkl_paths, start=1):
             report_progress(f"Stage 2: {i}/{len(pkl_paths)} ({Path(pkl_path).name})")
-            result = process_nodo_file(pkl_path)
+            try:
+                result = process_nodo_file(pkl_path)
+            except Exception as exc:  # noqa: BLE001 - one bad day (no MBP channel
+                # found, an empty BC/WV roster, a malformed timestamp -- all seen
+                # in real field data) must not lose every other day's already-
+                # computed result. "Flag, don't fail": the same ethos
+                # detect_subphases_sets.py and braking_detection.py already apply
+                # to a single failing phase/pair, applied here to a single day.
+                report_progress(f"Stage 2: {Path(pkl_path).name} SKIPPED ({exc})")
+                failed_days.append({"file": Path(pkl_path).name, "error": str(exc)})
+                continue
             total_phases += result["n_phases"]
             csv_path = str(result["csv_path"])
 
@@ -80,6 +91,8 @@ def run_ingest_and_extract(
         return {
             "kit_id": kit_id,
             "days_ingested": len(pkl_paths),
+            "days_failed": len(failed_days),
+            "failed_days": failed_days,
             "total_phases": total_phases,
             "csv_path": csv_path,
         }
