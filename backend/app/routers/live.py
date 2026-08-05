@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..services import data_store, live_timeseries, live_watch
+from ..services import data_store, live_replay, live_timeseries, live_watch
 
 router = APIRouter(prefix="/api/live", tags=["live"])
 
@@ -25,6 +26,14 @@ def _clean(obj):
 class StartWatcherRequest(BaseModel):
     watch_dir: str
     poll_interval_s: float = 1.0
+
+
+class StartReplayRequest(BaseModel):
+    dest_dir: str
+    speed: float = 40.0
+    start_from: Optional[str] = None
+    loop: bool = False
+    source_dir: Optional[str] = None
 
 
 @router.get("/kits")
@@ -59,6 +68,40 @@ def status(kit_id: str):
     result = live_watch.get_watcher_status(kit_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"No watcher for {kit_id}")
+    return _clean(result)
+
+
+@router.post("/{kit_id}/replay/start")
+def start_replay(kit_id: str, req: StartReplayRequest):
+    """Drip-feeds data/raw/{kit_id} (or an explicit source_dir) into
+    dest_dir at sped-up timing -- the UI-driven counterpart to running
+    replay_bin_files.py by hand. Point dest_dir at the same folder a
+    watcher for this kit is watching (or is about to watch) to simulate a
+    live gateway end to end."""
+    try:
+        status = live_replay.start_replay(
+            kit_id, req.dest_dir, speed=req.speed, start_from=req.start_from,
+            loop=req.loop, source_dir=req.source_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _clean(status)
+
+
+@router.post("/{kit_id}/replay/stop")
+def stop_replay(kit_id: str):
+    try:
+        status = live_replay.stop_replay(kit_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _clean(status)
+
+
+@router.get("/{kit_id}/replay/status")
+def replay_status(kit_id: str):
+    result = live_replay.get_replay_status(kit_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No replay for {kit_id}")
     return _clean(result)
 
 

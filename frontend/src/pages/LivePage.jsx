@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   startLiveWatcher, stopLiveWatcher, getLiveStatus, getLiveEvents, clearLiveEvents, getLiveKitsReadiness,
+  startReplay, stopReplay, getReplayStatus,
 } from '../api/client'
 import LiveCyclePlotCard from '../components/LiveCyclePlotCard.jsx'
 import PredictionBadge from '../components/PredictionBadge.jsx'
@@ -25,6 +26,9 @@ const STORAGE_WATCH_DIR = 'live.watchDir'
 export default function LivePage() {
   const [kitId, setKitIdState] = useState(() => localStorage.getItem(STORAGE_KIT_ID) || 'Dati10')
   const [watchDir, setWatchDirState] = useState(() => localStorage.getItem(STORAGE_WATCH_DIR) || '')
+  const [replaySpeed, setReplaySpeed] = useState(40)
+  const [replayStartFrom, setReplayStartFrom] = useState('')
+  const [replayLoop, setReplayLoop] = useState(false)
   const queryClient = useQueryClient()
 
   const setKitId = (id) => {
@@ -84,6 +88,47 @@ export default function LivePage() {
     mutationFn: () => clearLiveEvents(kitId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['live-events', kitId] })
+    },
+  })
+
+  const { data: replayStatus, isError: replayStatusError, error: replayStatusErrorObj } = useQuery({
+    queryKey: ['live-replay-status', kitId],
+    queryFn: () => getReplayStatus(kitId),
+    enabled: Boolean(kitId),
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.is_running ? POLL_MS : false),
+    refetchIntervalInBackground: true,
+  })
+
+  const isReplaying = Boolean(replayStatus?.is_running)
+
+  // "Play" is the one-click path: it also starts the watcher first if it
+  // isn't running yet, so a cold demo needs exactly one button instead of
+  // "start the watcher, then separately start the replay into the same
+  // folder" -- the two steps this feature exists to collapse.
+  const playMutation = useMutation({
+    mutationFn: async () => {
+      if (!isRunning) {
+        await startLiveWatcher(kitId, watchDir)
+      }
+      return startReplay(kitId, {
+        destDir: watchDir,
+        speed: Number(replaySpeed) || 0,
+        startFrom: replayStartFrom || undefined,
+        loop: replayLoop,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['live-status', kitId] })
+      queryClient.invalidateQueries({ queryKey: ['live-replay-status', kitId] })
+      queryClient.invalidateQueries({ queryKey: ['live-events', kitId] })
+    },
+  })
+
+  const stopReplayMutation = useMutation({
+    mutationFn: () => stopReplay(kitId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['live-replay-status', kitId] })
     },
   })
 
@@ -181,6 +226,113 @@ export default function LivePage() {
 
       {startMutation.isError && (
         <p className="mt-3 text-rose-600 dark:text-rose-400">{String(startMutation.error?.response?.data?.detail ?? startMutation.error)}</p>
+      )}
+
+      <h2 className="mt-8 text-lg font-semibold tracking-tight">Simulate live data</h2>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        Drip-feeds <code>data/raw/{kitId || '{kit}'}</code> into the watch folder above at sped-up
+        timing, standing in for a real live gateway (see <code>replay_bin_files.py</code>). Play
+        starts the watcher too if it isn't running yet.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          Speed (× real time)
+          <input
+            type="number"
+            min="0"
+            step="1"
+            className={`${inputClass} w-28`}
+            value={replaySpeed}
+            onChange={(e) => setReplaySpeed(e.target.value)}
+            disabled={isReplaying}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          Start from (optional)
+          <input
+            type="datetime-local"
+            className={inputClass}
+            value={replayStartFrom}
+            onChange={(e) => setReplayStartFrom(e.target.value)}
+            disabled={isReplaying}
+          />
+        </label>
+        <label className="flex items-center gap-2 pb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <input
+            type="checkbox"
+            checked={replayLoop}
+            onChange={(e) => setReplayLoop(e.target.checked)}
+            disabled={isReplaying}
+          />
+          Loop
+        </label>
+        {!isReplaying ? (
+          <button
+            disabled={playMutation.isPending || !kitId || !watchDir || (selectedReadiness && !selectedReadiness.ready)}
+            title={selectedReadiness && !selectedReadiness.ready ? selectedReadiness.reasons.join(' ') : undefined}
+            onClick={() => playMutation.mutate()}
+            className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {playMutation.isPending ? 'Starting...' : '▶ Play'}
+          </button>
+        ) : (
+          <button
+            disabled={stopReplayMutation.isPending}
+            onClick={() => stopReplayMutation.mutate()}
+            className="rounded-md bg-rose-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+          >
+            {stopReplayMutation.isPending ? 'Stopping...' : '■ Stop'}
+          </button>
+        )}
+      </div>
+      {playMutation.isError && (
+        <p className="mt-3 text-rose-600 dark:text-rose-400">
+          {String(playMutation.error?.response?.data?.detail ?? playMutation.error)}
+        </p>
+      )}
+      {replayStatus && (
+        <div className="mt-3 grid grid-cols-2 gap-4 rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800 sm:grid-cols-4">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-400">State</div>
+            <div className="mt-1 font-medium">
+              {isReplaying ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  replaying
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {/* files_total starts at 0 until the first file copies, so an
+                      immediate stop (0/0) must not read as "ran to completion". */}
+                  {replayStatus.finished_at && replayStatus.files_total > 0
+                    && replayStatus.files_copied >= replayStatus.files_total
+                    && !replayStatus.loop
+                    ? 'finished' : 'stopped'}
+                </span>
+              )}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-400">Files copied</div>
+            <div className="mt-1 font-medium">{replayStatus.files_copied} / {replayStatus.files_total || '?'}</div>
+          </div>
+          <div className="col-span-2">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Current file</div>
+            <div className="mt-1 truncate font-mono text-xs" title={replayStatus.current_file ?? ''}>
+              {replayStatus.current_file ?? '—'}
+            </div>
+          </div>
+          {replayStatus.last_error && (
+            <div className="col-span-full">
+              <div className="text-xs uppercase tracking-wide text-amber-500">Last error</div>
+              <div className="mt-1 whitespace-pre-wrap font-mono text-xs text-amber-600 dark:text-amber-400">
+                {replayStatus.last_error}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {replayStatusError && String(replayStatusErrorObj).includes('404') && (
+        <p className="mt-2 text-slate-500 dark:text-slate-400">No replay run yet for {kitId}.</p>
       )}
 
       <h2 className="mt-8 text-lg font-semibold tracking-tight">Status</h2>

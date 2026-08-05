@@ -17,9 +17,10 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -51,15 +52,28 @@ def _sorted_bin_files(source_dir: Path, start_from: Optional[np.datetime64]) -> 
 
 def replay(source_dir: Path, dest_dir: Path, speed: float = 60.0,
            start_from: Optional[str] = None, loop: bool = False,
-           report=print) -> None:
+           report=print, progress_cb: Optional[Callable[[int, int, str], None]] = None,
+           stop_event: Optional[threading.Event] = None) -> None:
     """Copies (never moves -- source_dir must stay byte-identical across
     repeated demo runs) every matched `.bin` file from source_dir into
     dest_dir, in filename-timestamp order, sleeping between files by their
-    real inter-file gap divided by `speed` (0 = no delay, burst mode)."""
+    real inter-file gap divided by `speed` (0 = no delay, burst mode).
+
+    `progress_cb(i, total, filename)`, if given, fires on every copy (not
+    just the every-25 `report()` log lines) -- for a UI progress bar rather
+    than a console log. `stop_event`, if given, is checked before each
+    inter-file sleep and each copy, and used in place of `time.sleep` so a
+    caller can interrupt a wait immediately rather than blocking up to the
+    full remaining gap -- this is the only way to stop a --loop run, which
+    otherwise repeats forever."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     start_ts = np.datetime64(start_from) if start_from else None
 
     while True:
+        if stop_event is not None and stop_event.is_set():
+            report("Replay stopped.")
+            return
+
         rows = _sorted_bin_files(source_dir, start_ts)
         if not rows:
             report(f"No matching .bin files found under: {source_dir}")
@@ -70,13 +84,25 @@ def replay(source_dir: Path, dest_dir: Path, speed: float = 60.0,
 
         prev_ts: Optional[np.datetime64] = None
         for i, (path, ts) in enumerate(rows, start=1):
+            if stop_event is not None and stop_event.is_set():
+                report("Replay stopped.")
+                return
+
             if speed > 0 and prev_ts is not None:
                 gap_s = float((ts - prev_ts) / np.timedelta64(1, "s"))
                 if gap_s > 0:
-                    time.sleep(gap_s / speed)
+                    if stop_event is not None:
+                        stop_event.wait(gap_s / speed)
+                        if stop_event.is_set():
+                            report("Replay stopped.")
+                            return
+                    else:
+                        time.sleep(gap_s / speed)
             prev_ts = ts
 
             shutil.copy2(path, dest_dir / path.name)
+            if progress_cb is not None:
+                progress_cb(i, len(rows), path.name)
             if i % 25 == 0 or i == len(rows):
                 report(f"  [{i}/{len(rows)}] {path.name}")
 

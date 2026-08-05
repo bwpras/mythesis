@@ -74,6 +74,27 @@ export async function stopLiveWatcher(kitId) {
   return data
 }
 
+export async function startReplay(kitId, { destDir, speed = 40, startFrom, loop = false, sourceDir } = {}) {
+  const { data } = await api.post(`/live/${kitId}/replay/start`, {
+    dest_dir: destDir,
+    speed,
+    start_from: startFrom || null,
+    loop,
+    source_dir: sourceDir || null,
+  })
+  return data
+}
+
+export async function stopReplay(kitId) {
+  const { data } = await api.post(`/live/${kitId}/replay/stop`)
+  return data
+}
+
+export async function getReplayStatus(kitId) {
+  const { data } = await api.get(`/live/${kitId}/replay/status`)
+  return data
+}
+
 export async function getLiveStatus(kitId) {
   const { data } = await api.get(`/live/${kitId}/status`)
   return data
