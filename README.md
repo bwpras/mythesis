@@ -54,6 +54,20 @@ Open `http://localhost:5173`. Requires Python 3.10+ and Node.js 18+.
 
 `data/` and `outputs/` (where the dashboard normally reads real processed data and trained models from) aren't tracked in this repo — they're large, and in this project's case, real operational telemetry. `sample_data/` ships instead: the real feature CSVs and the real trained model, with only GPS coordinates shifted by one fixed random offset (map still shows a realistic, internally consistent route per kit — just not the real one). Every other field — pressures, timings, sensor flags, predictions — is unmodified real data. See `sample_data/README.md` for exactly what changed.
 
+## Deploy a live demo (free)
+
+The repo ships `render.yaml` and `vercel.json` for a free two-service deploy: **Render** (free web service) for the FastAPI backend, **Vercel** (free static hosting) for the React frontend. The backend's build step seeds `data/` and `outputs/` from `sample_data/`, same as the local instructions above — a public deploy this way always shows the anonymized sample dataset, never real telemetry.
+
+1. **Backend — Render**: [New +] → **Blueprint** → pick this repo. Render reads `render.yaml` and creates a free web service (`mythesis-backend`) that installs `backend/requirements.txt`, copies `sample_data/` into place, and runs uvicorn. Once deployed, note its URL (e.g. `https://mythesis-backend.onrender.com`).
+2. **Frontend — Vercel**: [Add New...] → **Project** → import this repo. Vercel reads `vercel.json` and builds `frontend/`. Before deploying, add an environment variable:
+   - `VITE_API_BASE_URL` = `https://mythesis-backend.onrender.com/api` (your Render URL + `/api`)
+3. **Lock down CORS**: back in the Render service's environment variables, set `ALLOWED_ORIGINS` to your Vercel URL (e.g. `https://mythesis.vercel.app`, no trailing slash) and let it redeploy.
+
+Notes:
+- Render's free plan spins the backend down after 15 minutes idle; the first request after that takes ~30-50s to wake it back up, then responds normally.
+- The Jobs page's pipeline runs and live-watch features write to the backend's local disk, which is ephemeral on Render free — fine for demoing, but state resets on redeploy/restart.
+- Prefer a single always-on URL, or don't want two accounts? `render.yaml`'s build/start commands also work as a plain Render **Web Service** (skip Vercel) if you additionally serve `frontend/dist` from FastAPI — not wired up by default here.
+
 ### Using your own data instead
 
 Replace what you copied from `sample_data/` above:

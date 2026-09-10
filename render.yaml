@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: mythesis-backend
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r backend/requirements.txt
+      mkdir -p data/processed outputs/models/finished_thesis
+      cp sample_data/processed/*.csv data/processed/
+      cp sample_data/models/finished_thesis/* outputs/models/finished_thesis/
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
+    envVars:
+      - key: ALLOWED_ORIGINS
+        sync: false
+    healthCheckPath: /api/health

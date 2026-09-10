@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,10 +9,16 @@ from .routers import diagnostics, jobs, kits, live
 
 app = FastAPI(title="Railway Braking Dashboard API")
 
-# Local dev only: Vite's default port. Tighten this before any real deployment.
+# Vite's default dev port, plus any extra origins (e.g. the deployed
+# frontend URL) supplied via ALLOWED_ORIGINS as a comma-separated list.
+_allowed_origins = ["http://localhost:5173"] + [
+    origin.strip()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
