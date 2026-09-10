@@ -16,6 +16,7 @@ Thumbs.db
 
 # Local, machine-specific tool settings
 .claude/settings.local.json
+PrototypeDashboardGuide.txt
 
 # Compressed backups: always redundant with their extracted contents by
 # nature (found and removed one growing .git to 91MB on 2026-08-04).
