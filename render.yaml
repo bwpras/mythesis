@@ -12,4 +12,8 @@ services:
     envVars:
       - key: ALLOWED_ORIGINS
         sync: false
+      # scikit-learn 1.6.1 (see backend/requirements.txt) ships no wheels
+      # for Python 3.14, which Render would otherwise default to.
+      - key: PYTHON_VERSION
+        value: "3.12.3"
     healthCheckPath: /api/health
