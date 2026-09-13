@@ -46,6 +46,7 @@ from python_port.ingestion.filename_pattern import parse_bin_filename  # noqa: E
 from python_port.ingestion.live_ingest import parse_new_gps_file, parse_new_pressure_file  # noqa: E402
 from python_port.ingestion.live_precondition import check_live_precondition  # noqa: E402
 
+from ..config import resolve_under_data
 from . import data_store, live_timeseries
 from . import predict as predict_service
 
@@ -225,6 +226,7 @@ def start_watcher(kit_id: str, watch_dir: Path, poll_interval_s: float = 1.0) ->
     """Runs check_live_precondition() first (raises ValueError with the
     actionable message on failure), builds the detector from the
     precondition's label map + locked pairing, starts a daemon thread."""
+    watch_dir = resolve_under_data(watch_dir)
     with _lock:
         existing = _watchers.get(kit_id)
         if existing is not None and existing.status.is_running:
@@ -247,7 +249,6 @@ def start_watcher(kit_id: str, watch_dir: Path, poll_interval_s: float = 1.0) ->
                       for i, sid in enumerate(wv_ids)]
         detector = BrakingCycleDetector.from_schema(mbp_schema, bc_schemas, wv_schemas, verbose=False)
 
-        watch_dir = Path(watch_dir)
         watch_dir.mkdir(parents=True, exist_ok=True)
         handle = _WatcherHandle(
             kit_id=kit_id, watch_dir=watch_dir, poll_interval_s=poll_interval_s,

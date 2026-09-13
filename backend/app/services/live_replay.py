@@ -26,6 +26,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from python_port.tools.replay_bin_files import replay  # noqa: E402
 
+from ..config import resolve_under_data  # noqa: E402
+
 
 @dataclass
 class ReplayStatus:
@@ -106,13 +108,14 @@ def start_replay(kit_id: str, dest_dir: str, speed: float = 40.0,
         if existing is not None and existing.status.is_running:
             raise ValueError(f"Replay already running for {kit_id}")
 
+        dest = resolve_under_data(dest_dir)
         # Defaults to the same data/raw/<kit_id> convention pipeline.py uses
         # for batch ingestion -- the one raw source a kit_id maps to.
-        src = Path(source_dir) if source_dir else _REPO_ROOT / "data" / "raw" / kit_id
+        src = resolve_under_data(source_dir) if source_dir else resolve_under_data(Path("raw") / kit_id)
         if not src.is_dir():
             raise ValueError(f"Source directory not found: {src}")
 
-        handle = _ReplayHandle(kit_id, src, Path(dest_dir), speed, start_from, loop)
+        handle = _ReplayHandle(kit_id, src, dest, speed, start_from, loop)
         _replays[kit_id] = handle
         handle.thread.start()
         return handle.status.to_dict()
