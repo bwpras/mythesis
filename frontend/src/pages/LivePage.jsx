@@ -24,7 +24,10 @@ const STORAGE_KIT_ID = 'live.kitId'
 const STORAGE_WATCH_DIR = 'live.watchDir'
 
 export default function LivePage() {
-  const [kitId, setKitIdState] = useState(() => localStorage.getItem(STORAGE_KIT_ID) || 'Dati10')
+  // Dati05, not the larger Dati10: it's the one kit the public deploy ships
+  // raw .bin + a locked pairing for, so it's the only one that starts ready
+  // (GET /api/live/kits). Landing on an unready kit makes the page look inert.
+  const [kitId, setKitIdState] = useState(() => localStorage.getItem(STORAGE_KIT_ID) || 'Dati05')
   const [watchDir, setWatchDirState] = useState(() => localStorage.getItem(STORAGE_WATCH_DIR) || '')
   const [replaySpeed, setReplaySpeed] = useState(40)
   const [replayStartFrom, setReplayStartFrom] = useState('')

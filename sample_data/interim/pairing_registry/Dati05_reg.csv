@@ -1,0 +1,3 @@
+PairIdx,BC_ID,BC_MaxPressure,BC_Label,WV_ID,WV_MeanPressure,WV_Label,UseReferencePhase,RefPhaseIdx,SourceFile,SavedOn
+1,0x7,0.8641385100220647,BC,0xcf,2.8,WV,True,2,data\interim\python_port\Dati05\Nodo_Dati05_20250610_20250611.pkl,2026-09-13T17:19:35
+2,0x3b,0.8617337483711829,BC,0x9a,2.7,WV,True,2,data\interim\python_port\Dati05\Nodo_Dati05_20250610_20250611.pkl,2026-09-13T17:19:35
