@@ -65,6 +65,19 @@ export default function OverviewPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Fleet overview</h1>
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+        <p>
+          A continuation of the thesis <em>Development of Data Driven Fault Detection and Diagnostic
+          of Freight Train Air Brake System</em>, focused on the monitoring dashboard itself &mdash;
+          presenting the same pipeline and model results in a form that reads more clearly.
+        </p>
+        <p className="mt-2">
+          <span className="font-medium text-slate-700 dark:text-slate-300">Disclaimer:</span>{' '}
+          GPS coordinates shown here are spoofed, and only a portion of the dataset is served online.
+        </p>
+      </div>
+
       {kits.length === 0 && (
         <p className="mt-4 text-slate-500 dark:text-slate-400">
           No processed kits yet. Go to <Link to="/jobs" className="text-sky-600 hover:underline dark:text-sky-400">Jobs</Link> to
