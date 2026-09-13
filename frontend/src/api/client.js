@@ -1,9 +1,9 @@
 import axios from 'axios'
 
-// Relative base: Vite's dev proxy (vite.config.js) forwards this to FastAPI,
-// and a real deployment would put a reverse proxy in the same role -- the
-// frontend never hardcodes a backend host/port.
-export const api = axios.create({ baseURL: '/api' })
+// Relative base by default: Vite's dev proxy (vite.config.js) forwards this
+// to FastAPI. When the frontend and backend are deployed separately (e.g.
+// Vercel + Render), set VITE_API_BASE_URL to the backend's full /api URL.
+export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api' })
 
 export async function startIngestJob({ kitId, startDate, endDate }) {
   const { data } = await api.post('/jobs/ingest', {
