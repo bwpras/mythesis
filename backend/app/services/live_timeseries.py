@@ -150,7 +150,17 @@ def load_phase_timeseries(kit_id: str, mbp_id: str, start_time) -> Optional[dict
     """Looks up one phase's stored time-series by the same (MBP_ID,
     Start_brake_time_pipe) identity used to key it. Returns None if not
     found (e.g. this cycle predates the timeseries-saving feature, or the
-    save failed and was only logged as a watcher warning)."""
+    save failed and was only logged as a watcher warning).
+
+    A missing start_time returns None too, rather than reaching
+    _phase_key(): a phase whose Start_brake_time_pipe is NaT was never
+    keyed by one, so no file can exist for it. Callers can't screen this
+    out with a plain `if start_time` -- pd.NaT is truthy, as is the "NaT"
+    string a CSV round-trip can produce -- and strftime() rejects NaT, so
+    without this an event with no start time raised instead of reading as
+    "no stored history"."""
+    if pd.isna(pd.to_datetime(start_time, errors="coerce")):
+        return None
     path = _store_dir(kit_id) / f"{_phase_key(mbp_id, start_time)}.json"
     if not path.is_file():
         return None
