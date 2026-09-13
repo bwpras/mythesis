@@ -1,7 +1,13 @@
 fastapi
 uvicorn[standard]
 python-multipart
-pandas
-numpy
-joblib
-scikit-learn
+# Pinned, not floating: the trained model bundles in
+# outputs/models/finished_thesis/ are pickles produced by scikit-learn
+# 1.6.1, and a newer scikit-learn fails to run them (SimpleImputer's
+# internals were renamed, so loading a 1.6.1 pipeline and calling
+# predict() raises AttributeError). numpy/pandas are pinned alongside it
+# because the same pickles carry numpy arrays.
+pandas==2.3.3
+numpy==2.5.3
+joblib==1.6.0
+scikit-learn==1.6.1
